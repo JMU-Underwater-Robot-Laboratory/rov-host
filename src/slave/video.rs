@@ -38,25 +38,19 @@ use super::slave_config::SlaveConfigModel;
 
 #[derive(EnumIter, EnumToString, PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum ImageFormat {
-    JPEG, PNG, TIFF, BMP
+    JPEG
 }
 
 impl ImageFormat {
     pub fn from_extension(extension: &str) -> Option<ImageFormat> {
         match extension {
             "jpg" | "jpeg" => Some(ImageFormat::JPEG),
-            "png" => Some(ImageFormat::PNG),
-            "tiff" => Some(ImageFormat::TIFF),
-            "bmp" => Some(ImageFormat::BMP),
             _ => None, 
         }
     }
     pub fn extension(&self) -> &'static str {
         match self {
             ImageFormat::JPEG => "jpg",
-            ImageFormat::PNG => "png",
-            ImageFormat::TIFF => "tiff",
-            ImageFormat::BMP => "bmp",
         }
     }
 }
@@ -129,7 +123,7 @@ pub struct VideoEncoder(pub VideoCodec, pub VideoCodecProvider);
 
 #[derive(EnumIter, PartialEq, Clone, Debug, Serialize, Deserialize, Copy)]
 pub enum VideoCodec {
-    H264, H265, VP8, VP9, AV1
+    H264, H265, 
 }
 
 impl ToString for VideoCodec {
@@ -137,9 +131,6 @@ impl ToString for VideoCodec {
         match self {
             VideoCodec::H264 => "H.264",
             VideoCodec::H265 => "H.265",
-            VideoCodec::VP8 => "VP8",
-            VideoCodec::VP9 => "VP9",
-            VideoCodec::AV1 => "AV1",
         }.to_string()
     }
 }
@@ -149,9 +140,6 @@ impl VideoCodec {
         match self {
             VideoCodec::H264 => "h264",
             VideoCodec::H265 => "h265",
-            VideoCodec::VP8 => "vp8",
-            VideoCodec::VP9 => "vp9",
-            VideoCodec::AV1 => "av1",
         }
     }
 
@@ -162,7 +150,7 @@ impl VideoCodec {
     
 #[derive(EnumIter, PartialEq, Clone, Debug, Serialize, Deserialize, Copy)]
 pub enum VideoCodecProvider {
-    Native, AVCodec, NVCodec, VAAPI, D3D11
+    Native, AVCodec, 
 }
 
 impl ToString for VideoCodecProvider {
@@ -170,9 +158,6 @@ impl ToString for VideoCodecProvider {
         match self {
             VideoCodecProvider::Native => "原生 (软件)",
             VideoCodecProvider::AVCodec => "FFMPEG (软件)",
-            VideoCodecProvider::NVCodec => "NVIDIA (硬件)",
-            VideoCodecProvider::VAAPI => "VAAPI (硬件)",
-            VideoCodecProvider::D3D11 => "Direct3D 11 (硬件)",
         }.to_string()
     }
 }
@@ -181,14 +166,10 @@ impl VideoCodecProvider {
     fn format_codec(&self, codec: VideoCodec, encode: bool) -> String {
         let enc_or_dec = if encode { "enc" } else { "dec" };
         match self {
-            VideoCodecProvider::NVCodec => format!("nv{0}{1}", codec.name(), enc_or_dec),
             VideoCodecProvider::AVCodec => format!("av{1}_{0}", codec.name(), enc_or_dec),
-            VideoCodecProvider::VAAPI => format!("vaapi{0}{1}", codec.name(), enc_or_dec),
-            VideoCodecProvider::D3D11 => format!("d3d11{0}{1}", codec.name(), enc_or_dec),
             VideoCodecProvider::Native => match codec {
                 VideoCodec::H264 => format!("x264{}", enc_or_dec),
                 VideoCodec::H265 => format!("x265{}", enc_or_dec),
-                codec => format!("{}{}", codec.name(), enc_or_dec),
             },
         }
     }
@@ -212,7 +193,6 @@ impl VideoEncoder {
                 let h265parse = gst::ElementFactory::make("h265parse", None).map_err(|_| "Missing element: h265parse")?;
                 elements.push(h265parse);
             },
-            _ => (),
         };
         let matroskamux = gst::ElementFactory::make("matroskamux", None).map_err(|_| "Missing muxer: matroskamux")?;
         elements.push(matroskamux);
@@ -240,7 +220,6 @@ impl VideoDecoder {
                 let parse = gst::ElementFactory::make("h265parse", None).map_err(|_| "Missing element: h265parse")?;
                 elements.push(parse);
             },
-            _ => (),
         }
         let matroskamux = gst::ElementFactory::make("matroskamux", None).map_err(|_| "Missing muxer: matroskamux")?;
         elements.push(matroskamux);
@@ -261,7 +240,6 @@ impl VideoDecoder {
                 let parse = gst::ElementFactory::make("h265parse", None).map_err(|_| "Missing element: h265parse")?;
                 elements.push(parse);
             },
-            _ => (),
         }
         let decoder_name = self.1.format_codec(self.0, false);
         let decoder = gst::ElementFactory::make(&decoder_name, Some("video_decoder")).map_err(|_| format!("Missing element: {}", &decoder_name))?;
@@ -272,23 +250,13 @@ impl VideoDecoder {
 
 #[derive(EnumIter, EnumToString, PartialEq, Clone, Debug, Serialize, Deserialize, Copy)]
 pub enum ColorspaceConversion {
-    CPU, CUDA, D3D11
+    CPU
 }
 
 impl ColorspaceConversion {
     fn gst_elements(&self) -> Result<Vec<Element>, String> {
         match self {
             ColorspaceConversion::CPU => Ok(vec![gst::ElementFactory::make("videoconvert", None).map_err(|_| "Missing element: videoconvert")?]),
-            ColorspaceConversion::CUDA => Ok(vec![
-                gst::ElementFactory::make("cudaupload", None).map_err(|_| "Missing element: cudaupload")?,
-                gst::ElementFactory::make("cudaconvert", None).map_err(|_| "Missing element: cudaconvert")?,
-                gst::ElementFactory::make("cudadownload", None).map_err(|_| "Missing element: cudadownload")?,
-            ]),
-            ColorspaceConversion::D3D11 => Ok(vec![
-                gst::ElementFactory::make("d3d11upload", None).map_err(|_| "Missing element: d3d11upload")?,
-                gst::ElementFactory::make("d3d11convert", None).map_err(|_| "Missing element: d3d11convert")?,
-                gst::ElementFactory::make("d3d11download", None).map_err(|_| "Missing element: d3d11download")?,
-            ]),
         }
     }
 }
@@ -300,7 +268,7 @@ impl Default for VideoEncoder {
 
 impl Default for VideoDecoder {
     fn default() -> Self {
-        Self(VideoCodec::H264, VideoCodecProvider::AVCodec)
+        Self(VideoCodec::H265, VideoCodecProvider::AVCodec)
     }
 }
 

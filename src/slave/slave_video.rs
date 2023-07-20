@@ -360,7 +360,7 @@ impl MicroWidgets<SlaveVideoModel> for SlaveVideoWidgets {
                 set_vexpand: true,
                 set_hexpand: true,
                 add_child = &StatusPage {
-                    set_icon_name: Some("face-uncertain-symbolic"),
+                    set_icon_name: Some("mail-mark-junk-symbolic"),
                     set_title: "无信号",
                     set_description: Some("请点击上方按钮启动视频拉流"),
                     set_visible: track!(model.changed(SlaveVideoModel::pixbuf()), model.pixbuf == None),

@@ -518,6 +518,7 @@ impl MicroWidgets<SlaveModel> for SlaveWidgets {
                                                 set_hexpand: true,
                                                 set_start_widget = Some(&Label) {
                                                     set_markup: "<b>深度锁定</b>",
+                                                    set_margin_end: 5,
                                                 },
                                                 set_end_widget = Some(&Switch) {
                                                     set_active: track!(model.changed(SlaveModel::status()), model.get_target_status(&SlaveStatusClass::DepthLocked) != 0),
@@ -531,6 +532,7 @@ impl MicroWidgets<SlaveModel> for SlaveWidgets {
                                                 set_hexpand: true,
                                                 set_start_widget = Some(&Label) {
                                                     set_markup: "<b>方向锁定</b>",
+                                                    set_margin_end: 5,
                                                 },
                                                 set_end_widget = Some(&Switch) {
                                                     set_active: track!(model.changed(SlaveModel::status()), model.get_target_status(&SlaveStatusClass::DirectionLocked) != 0),

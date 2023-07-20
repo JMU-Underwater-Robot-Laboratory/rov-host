@@ -218,23 +218,6 @@ impl MicroWidgets<SlaveConfigModel> for SlaveConfigWidgets {
                             },
                         },
                         append = &PreferencesGroup {
-                            set_title: "控制",
-                            set_description: Some("调整机位控制选项"),
-                            add = &ActionRow {
-                                set_title: "交换 X/Y 轴",
-                                set_subtitle: "若下位机规定的 X/Y 轴与上位机不一致，可以使用此选项进行交换",
-                                add_suffix: swap_xy_switch = &Switch {
-                                    set_active: track!(model.changed(SlaveConfigModel::swap_xy()), *model.get_swap_xy()),
-                                    set_valign: Align::Center,
-                                    connect_state_set(sender) => move |_switch, state| {
-                                        send!(sender, SlaveConfigMsg::SetSwapXY(state));
-                                        Inhibit(false)
-                                    }
-                                },
-                                set_activatable_widget: Some(&swap_xy_switch),
-                            },
-                        },
-                        append = &PreferencesGroup {
                             set_title: "画面",
                             set_description: Some("上位机端对画面进行的处理选项"),
 
@@ -289,19 +272,6 @@ impl MicroWidgets<SlaveConfigModel> for SlaveConfigWidgets {
                                     }
                                 },
                             },
-                            add = &ActionRow {
-                                set_title: "启用画面自动跳帧",
-                                set_subtitle: "当机位画面与视频流延迟过大时，自动跳帧以避免延迟提升",
-                                add_suffix: appsink_queue_leaky_enabled_switch = &Switch {
-                                    set_active: track!(model.changed(SlaveConfigModel::appsink_queue_leaky_enabled()), *model.get_appsink_queue_leaky_enabled()),
-                                    set_valign: Align::Center,
-                                    connect_state_set(sender) => move |_switch, state| {
-                                        send!(sender, SlaveConfigMsg::SetAppSinkQueueLeakyEnabled(state));
-                                        Inhibit(false)
-                                    }
-                                },
-                                set_activatable_widget: Some(&appsink_queue_leaky_enabled_switch),
-                            },
                             add = &ExpanderRow {
                                 set_title: "手动配置管道",
                                 set_show_enable_switch: true,
@@ -324,51 +294,6 @@ impl MicroWidgets<SlaveConfigModel> for SlaveConfigWidgets {
                                     },
                                     add_suffix = &Label {
                                         set_label: "毫秒",
-                                    },
-                                },
-                                add_row = &ComboRow {
-                                    set_title: "色彩空间转换",
-                                    set_subtitle: "设置视频编解码、视频流显示要求的色彩空间转换所使用的硬件",
-                                    set_model: Some(&{
-                                        let model = StringList::new(&[]);
-                                        for value in ColorspaceConversion::iter() {
-                                            model.append(&value.to_string());
-                                        }
-                                        model
-                                    }),
-                                    set_selected: track!(model.changed(SlaveConfigModel::colorspace_conversion()), ColorspaceConversion::iter().position(|x| x == model.colorspace_conversion).unwrap() as u32),
-                                    connect_selected_notify(sender) => move |row| {
-                                        send!(sender, SlaveConfigMsg::SetColorspaceConversion(ColorspaceConversion::iter().nth(row.selected() as usize).unwrap()));
-                                    }
-                                },
-                                add_row = &ComboRow {
-                                    set_title: "解码器",
-                                    set_subtitle: "解码视频流使用的解码器",
-                                    set_model: Some(&{
-                                        let model = StringList::new(&[]);
-                                        for value in VideoCodec::iter() {
-                                            model.append(&value.to_string());
-                                        }
-                                        model
-                                    }),
-                                    set_selected: track!(model.changed(SlaveConfigModel::video_decoder()), VideoCodec::iter().position(|x| x == model.video_decoder.0).unwrap() as u32),
-                                    connect_selected_notify(sender) => move |row| {
-                                        send!(sender, SlaveConfigMsg::SetVideoDecoderCodec(VideoCodec::iter().nth(row.selected() as usize).unwrap()))
-                                    }
-                                },
-                                add_row = &ComboRow {
-                                    set_title: "解码器接口",
-                                    set_subtitle: "解码视频流使用的解码器接口",
-                                    set_model: Some(&{
-                                        let model = StringList::new(&[]);
-                                        for value in VideoCodecProvider::iter() {
-                                            model.append(&value.to_string());
-                                        }
-                                        model
-                                    }),
-                                    set_selected: track!(model.changed(SlaveConfigModel::video_decoder()), VideoCodecProvider::iter().position(|x| x == model.video_decoder.1).unwrap() as u32),
-                                    connect_selected_notify(sender) => move |row| {
-                                        send!(sender, SlaveConfigMsg::SetVideoDecoderCodecProvider(VideoCodecProvider::iter().nth(row.selected() as usize).unwrap()))
                                     },
                                 },
                             },
@@ -395,21 +320,6 @@ impl MicroWidgets<SlaveConfigModel> for SlaveConfigWidgets {
                                         send!(sender, SlaveConfigMsg::SetVideoEncoderCodec(VideoCodec::iter().nth(row.selected() as usize).unwrap()))
                                     }
                                 },
-                                add_row = &ComboRow {
-                                    set_title: "编码器接口",
-                                    set_subtitle: "视频录制时调用的编码器接口",
-                                    set_model: Some(&{
-                                        let model = StringList::new(&[]);
-                                        for value in VideoCodecProvider::iter() {
-                                            model.append(&value.to_string());
-                                        }
-                                        model
-                                    }),
-                                    set_selected: track!(model.changed(SlaveConfigModel::video_encoder()), VideoCodecProvider::iter().position(|x| x == model.video_encoder.1).unwrap() as u32),
-                                    connect_selected_notify(sender) => move |row| {
-                                        send!(sender, SlaveConfigMsg::SetVideoEncoderCodecProvider(VideoCodecProvider::iter().nth(row.selected() as usize).unwrap()))
-                                    }
-                                },
                             },
                         },
                     },
@@ -418,15 +328,3 @@ impl MicroWidgets<SlaveConfigModel> for SlaveConfigWidgets {
         }
     }
 }
-// Local Variables:
-// eval: (local-set-key
-//        (kbd "C-S-y")
-//        (defun rov-host-yank-preferences-to-slave-config ()
-//          (interactive)
-//          (yank)
-//          (let ((beg (mark-marker))
-//                (end (point-marker)))
-//            (replace-regexp-in-region "Default" "" beg end)
-//            (replace-regexp-in-region "default_" "" beg end)
-//            (replace-regexp-in-region "Preferences" "SlaveConfig" beg end))))
-// End:

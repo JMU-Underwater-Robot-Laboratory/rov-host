@@ -26,14 +26,11 @@ pub mod ui;
 
 use std::{cell::RefCell, fs, net::Ipv4Addr, ops::Deref, rc::Rc, str::FromStr};
 
-use adw::{
-    prelude::*, ApplicationWindow, CenteringPolicy, ColorScheme, HeaderBar, StatusPage,
-    StyleManager,
-};
+use adw::{prelude::*, ApplicationWindow, CenteringPolicy, ColorScheme, HeaderBar, StyleManager};
 use glib::{clone, DateTime, MainContext, Sender, WeakRef, PRIORITY_DEFAULT};
 use gtk::{
-    AboutDialog, Align, Box as GtkBox, Button, Grid, Image, Inhibit, Label, License, MenuButton,
-    Orientation, Stack, ToggleButton,
+    AboutDialog, Align, Box as GtkBox, Button, Grid, Inhibit, License, MenuButton, Orientation,
+    ToggleButton,
 };
 use relm4::{
     actions::{RelmAction, RelmActionGroup},
@@ -101,17 +98,13 @@ impl ComponentUpdate<AppModel> for AboutModel {
 
 #[derive(EnumIter, PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum AppColorScheme {
-    FollowSystem,
     Light,
-    Dark,
 }
 
 impl ToString for AppColorScheme {
     fn to_string(&self) -> String {
         match self {
-            AppColorScheme::FollowSystem => "跟随系统",
             AppColorScheme::Light => "浅色",
-            AppColorScheme::Dark => "暗色",
         }
         .to_string()
     }
@@ -119,7 +112,7 @@ impl ToString for AppColorScheme {
 
 impl Default for AppColorScheme {
     fn default() -> Self {
-        Self::FollowSystem
+        Self::Light
     }
 }
 
@@ -165,15 +158,6 @@ impl Widgets<AppModel, ()> for AppWidgets {
                     pack_start = &Button {
                         set_halign: Align::Center,
                         set_css_classes?: watch!(model.sync_recording.map(|x| if x { &["destructive-action"] as &[&str] } else { &[] as &[&str] })),
-                        set_child = Some(&GtkBox) {
-                            set_spacing: 6,
-                            append = &Image {
-                                set_icon_name?: watch!(model.sync_recording.map(|x| Some(if x { "media-playback-stop-symbolic" } else { "media-record-symbolic" })))
-                            },
-                            append = &Label {
-                                set_label?: watch!(model.sync_recording.map(|x| if x { "停止" } else { "同步录制" })),
-                            },
-                        },
                         set_visible: track!(model.changed(AppModel::slaves()), model.slaves.len() > 1),
                         connect_clicked[sender = sender.clone(), window = app_window.clone().downgrade()] => move |__button| {
                             send!(sender, AppMsg::ToggleSyncRecording(window.clone()));
@@ -193,37 +177,11 @@ impl Widgets<AppModel, ()> for AppWidgets {
                             send!(sender, AppMsg::SetFullscreened(button.is_active()));
                         }
                     },
-                    // pack_end = &Separator {},
-                    // pack_end = &Button {
-                    //     set_icon_name: "list-remove-symbolic",
-                    //     set_tooltip_text: Some("移除机位"),
-                    //     set_sensitive: track!(model.changed(AppModel::sync_recording()) || model.changed(AppModel::slaves()), model.get_slaves().len() > 0 && *model.get_sync_recording() ==  Some(false)),
-                    //     connect_clicked(sender) => move |_button| {
-                    //         send!(sender, AppMsg::RemoveLastSlave);
-                    //     },
-                    // },
-                    // pack_end = &Button {
-                    //     set_icon_name: "list-add-symbolic",
-                    //     set_tooltip_text: Some("新建机位"),
-                    //     set_sensitive: track!(model.changed(AppModel::sync_recording()), model.sync_recording == Some(false)),
-                    //     connect_clicked[sender = sender.clone(), window = app_window.clone().downgrade()] => move |_button| {
-                    //         send!(sender, AppMsg::NewSlave(window.clone()));
-                    //     },
-                    // },
                 },
-                append: body_stack = &Stack {
-                    set_hexpand: true,
-                    set_vexpand: true,
-                    add_child: welcome_page = &StatusPage {
-                        set_icon_name: Some("window-new-symbolic"),
-                        set_title: "无机位",
-                        set_description: Some("请点击标题栏右侧按钮添加机位"),
-                    },
-                    add_child: slaves_page = &Grid {
-                        set_column_homogeneous: true,
-                        set_row_homogeneous: true,
-                        factory!(model.slaves),
-                    },
+                append: body_stack = &Grid {
+                    set_column_homogeneous: true,
+                    set_row_homogeneous: true,
+                    factory!(model.slaves),
                 },
             },
             connect_close_request(sender) => move |_window| {
@@ -237,16 +195,6 @@ impl Widgets<AppModel, ()> for AppWidgets {
         main_menu: {
             "首选项"     => PreferencesAction,
             "关于"       => AboutDialogAction,
-        }
-    }
-
-    fn post_view() {
-        if model.changed(AppModel::slaves()) {
-            if model.get_slaves().len() == 0 {
-                self.body_stack.set_visible_child(&self.welcome_page);
-            } else {
-                self.body_stack.set_visible_child(&self.slaves_page);
-            }
         }
     }
 
@@ -474,9 +422,7 @@ impl AppUpdate for AppModel {
             }
             AppMsg::SetColorScheme(scheme) => {
                 StyleManager::default().set_color_scheme(match scheme {
-                    AppColorScheme::FollowSystem => ColorScheme::Default,
                     AppColorScheme::Light => ColorScheme::ForceLight,
-                    AppColorScheme::Dark => ColorScheme::ForceDark,
                 })
             }
         }
@@ -487,6 +433,10 @@ impl AppUpdate for AppModel {
 fn main() {
     gst::init().expect("无法初始化 GStreamer");
     gtk::init().map(|_| adw::init()).expect("无法初始化 GTK4");
+
+    let setting = gtk::Settings::default().unwrap();
+    setting.set_gtk_theme_name(Some("Windows10"));
+
     let model = AppModel {
         preferences: Rc::new(RefCell::new(PreferencesModel::load_or_default())),
         ..Default::default()

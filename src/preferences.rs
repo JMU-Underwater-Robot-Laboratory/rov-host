@@ -182,46 +182,6 @@ impl Widgets<PreferencesModel, AppModel> for PreferencesWidgets {
                 Inhibit(true)
             },
             add = &PreferencesPage {
-                set_title: "通用",
-                set_icon_name: Some("view-grid-symbolic"),
-                add = &PreferencesGroup {
-                    set_title: "外观",
-                    set_description: Some("更改上位机的外观设置"),
-                    add = &ComboRow {
-                        set_title: "配色方案",
-                        set_subtitle: "上位机界面使用的配色方案",
-                        set_model: Some(&{
-                            let model = StringList::new(&[]);
-                            for value in AppColorScheme::iter() {
-                                model.append(&value.to_string());
-                            }
-                            model
-                        }),
-                        set_selected: track!(model.changed(PreferencesModel::application_color_scheme()), AppColorScheme::iter().position(|x| x == model.application_color_scheme).unwrap() as u32),
-                        connect_selected_notify(sender) => move |row| {
-                            send!(sender, PreferencesMsg::SetApplicationColorScheme(Some(AppColorScheme::iter().nth(row.selected() as usize).unwrap())))
-                        },
-                    },
-                },
-                add = &PreferencesGroup {
-                    set_title: "机位",
-                    set_description: Some("配置上位机的多机位功能"),
-                    add = &ActionRow {
-                        set_title: "初始机位",
-                        set_subtitle: "上位机启动时的初始机位数量",
-                        add_suffix = &SpinButton::with_range(0.0, 12.0, 1.0) {
-                            set_value: track!(model.changed(PreferencesModel::initial_slave_num()), model.initial_slave_num as f64),
-                            set_digits: 0,
-                            set_valign: Align::Center,
-                            set_can_focus: false,
-                            connect_value_changed(sender) => move |button| {
-                                send!(sender, PreferencesMsg::SetInitialSlaveNum(button.value() as u8));
-                            }
-                        }
-                    }
-                },
-            },
-            add = &PreferencesPage {
                 set_title: "通信",
                 set_icon_name: Some("network-transmit-receive-symbolic"),
                 add = &PreferencesGroup {
@@ -243,60 +203,6 @@ impl Widgets<PreferencesModel, AppModel> for PreferencesWidgets {
                                 }
                             }
                          },
-                    },
-                },
-                add = &PreferencesGroup {
-                    set_description: Some("机器人状态信息接收设置"),
-                    set_title: "状态信息",
-                    add = &ActionRow {
-                        set_title: "状态信息更新时间间隔",
-                        set_subtitle: "用于确定每秒钟向机器人请求接收状态信息并测试连接状态的频率（需要重新连接以应用设置）",
-                        add_suffix = &SpinButton::with_range(50.0, 10000.0, 50.0) {
-                            set_value: track!(model.changed(PreferencesModel::default_status_info_update_interval()), model.default_status_info_update_interval as f64),
-                            set_digits: 0,
-                            set_valign: Align::Center,
-                            set_can_focus: false,
-                            connect_value_changed(sender) => move |button| {
-                                send!(sender, PreferencesMsg::SetDefaultStatusInfoUpdateInterval(button.value() as u16));
-                            }
-                        },
-                        add_suffix = &Label {
-                            set_label: "毫秒",
-                        },
-                    },
-                },
-            },
-            add = &PreferencesPage {
-                set_title: "控制",
-                set_icon_name: Some("input-gaming-symbolic"),
-                add = &PreferencesGroup {
-                    set_title: "发送",
-                    set_description: Some("向机器人发送控制信号的设置（需要重新连接以应用设置）"),
-                    add = &ActionRow {
-                        set_title: "增量发送",
-                        set_subtitle: "每次发送只发送相对上一次发送的变化值以节省数据发送量",
-                        set_sensitive: false,
-                        add_suffix: increamental_sending_switch = &Switch {
-                            set_active: false,
-                            set_valign: Align::Center,
-                        },
-                        set_activatable_widget: Some(&increamental_sending_switch),
-                    },
-                    add = &ActionRow {
-                        set_title: "输入发送率",
-                        set_subtitle: "每秒钟向机器人发送的控制数据包的个数，该值越高意味着控制越灵敏，但在较差的网络条件下可能产生更大的延迟",
-                        add_suffix = &SpinButton::with_range(1.0, 1000.0, 1.0) {
-                            set_value: track!(model.changed(PreferencesModel::default_input_sending_rate()), model.default_input_sending_rate as f64),
-                            set_digits: 0,
-                            set_valign: Align::Center,
-                            set_can_focus: false,
-                            connect_value_changed(sender) => move |button| {
-                                send!(sender, PreferencesMsg::SetInputSendingRate(button.value() as u16));
-                            }
-                        },
-                        add_suffix = &Label {
-                            set_label: "Hz",
-                        },
                     },
                 },
             },
@@ -340,105 +246,6 @@ impl Widgets<PreferencesModel, AppModel> for PreferencesWidgets {
                             }
                         },
                     },
-                    add = &ActionRow {
-                        set_title: "默认启用画面自动跳帧",
-                        set_subtitle: "默认启用自动跳帧，当机位画面与视频流延迟过大时避免延迟提升",
-                        add_suffix: appsink_queue_leaky_enabled_switch = &Switch {
-                            set_active: track!(model.changed(PreferencesModel::default_appsink_queue_leaky_enabled()), *model.get_default_appsink_queue_leaky_enabled()),
-                            set_valign: Align::Center,
-                            connect_state_set(sender) => move |_switch, state| {
-                                send!(sender, PreferencesMsg::SetDefaultAppSinkQueueLeakyEnabled(state));
-                                Inhibit(false)
-                            }
-                        },
-                        set_activatable_widget: Some(&appsink_queue_leaky_enabled_switch),
-                    },
-                    add = &ExpanderRow {
-                        set_title: "默认手动配置管道",
-                        set_show_enable_switch: true,
-                        set_expanded: !*model.get_default_use_decodebin(),
-                        set_enable_expansion: track!(model.changed(PreferencesModel::default_use_decodebin()), !*model.get_default_use_decodebin()),
-                        connect_enable_expansion_notify(sender) => move |expander| {
-                            send!(sender, PreferencesMsg::SetDefaultUseDecodebin(!expander.enables_expansion()));
-                        },
-                        add_row = &ActionRow {
-                            set_title: "默认接收缓冲区延迟",
-                            set_subtitle: "若接收的视频流出现卡顿、花屏等现象，可以增加接收缓冲区延迟，牺牲视频的实时性来换取流畅度的提升",
-                            add_suffix = &SpinButton::with_range(0.0, 60000.0, 50.0) {
-                                set_value: track!(model.changed(PreferencesModel::default_video_latency()), model.default_video_latency as f64),
-                                set_digits: 0,
-                                set_valign: Align::Center,
-                                set_can_focus: false,
-                                connect_value_changed(sender) => move |button| {
-                                    send!(sender, PreferencesMsg::SetDefaultVideoLatency(button.value() as u32));
-                                }
-                            },
-                            add_suffix = &Label {
-                                set_label: "毫秒",
-                            },
-                        },
-                        add_row = &ComboRow {
-                            set_title: "默认解码器",
-                            set_subtitle: "指定解码视频流默认使用的解码器",
-                            set_model: Some(&{
-                                let model = StringList::new(&[]);
-                                for value in VideoCodec::iter() {
-                                    model.append(&value.to_string());
-                                }
-                                model
-                            }),
-                            set_selected: track!(model.changed(PreferencesModel::default_video_decoder()), VideoCodec::iter().position(|x| x == model.default_video_decoder.0).unwrap() as u32),
-                            connect_selected_notify(sender) => move |row| {
-                                send!(sender, PreferencesMsg::SetDefaultVideoDecoderCodec(VideoCodec::iter().nth(row.selected() as usize).unwrap()))
-                            }
-                        },
-                        add_row = &ComboRow {
-                            set_title: "默认解码器接口",
-                            set_subtitle: "指定解码视频流默认使用的解码器接口",
-                            set_model: Some(&{
-                                let model = StringList::new(&[]);
-                                for value in VideoCodecProvider::iter() {
-                                    model.append(&value.to_string());
-                                }
-                                model
-                            }),
-                            set_selected: track!(model.changed(PreferencesModel::default_video_decoder()), VideoCodecProvider::iter().position(|x| x == model.default_video_decoder.1).unwrap() as u32),
-                            connect_selected_notify(sender) => move |row| {
-                                send!(sender, PreferencesMsg::SetDefaultVideoDecoderCodecProvider(VideoCodecProvider::iter().nth(row.selected() as usize).unwrap()))
-                            }
-                        },
-                        add_row = &ComboRow {
-                            set_title: "默认色彩空间转换",
-                            set_subtitle: "设置视频编解码、视频流显示要求的色彩空间转换所使用的默认硬件",
-                            set_model: Some(&{
-                                let model = StringList::new(&[]);
-                                for value in ColorspaceConversion::iter() {
-                                    model.append(&value.to_string());
-                                }
-                                model
-                            }),
-                            set_selected: track!(model.changed(PreferencesModel::default_colorspace_conversion()), ColorspaceConversion::iter().position(|x| x == model.default_colorspace_conversion).unwrap() as u32),
-                            connect_selected_notify(sender) => move |row| {
-                                send!(sender, PreferencesMsg::SetDefaultColorspaceConversion(ColorspaceConversion::iter().nth(row.selected() as usize).unwrap()));
-                            }
-                        },
-                    },
-                    add = &ActionRow {
-                        set_title: "管道等待超时",
-                        set_subtitle: "由于网络等原因，管道可能失去响应，超过设定时间后上位机将强制终止管道，设置为 0 以禁用等待超时（需要重启管道以应用设置）",
-                        add_suffix = &SpinButton::with_range(0.0, 99.0, 1.0) {
-                            set_value: track!(model.changed(PreferencesModel::pipeline_timeout()), model.pipeline_timeout.as_secs() as f64),
-                            set_digits: 0,
-                            set_valign: Align::Center,
-                            set_can_focus: false,
-                            connect_value_changed(sender) => move |button| {
-                                send!(sender, PreferencesMsg::SetPipelineTimeout(Duration::from_secs(button.value() as u64)));
-                            }
-                        },
-                        add_suffix = &Label {
-                            set_label: "秒",
-                        },
-                    },
                 },
                 add = &PreferencesGroup {
                     set_title: "截图",
@@ -477,19 +284,6 @@ impl Widgets<PreferencesModel, AppModel> for PreferencesWidgets {
                         connect_activated(sender) => move |_row| {
                             send!(sender, PreferencesMsg::OpenVideoDirectory);
                         }
-                    },
-                    add = &ActionRow {
-                        set_title: "同步录制时使用单独文件夹",
-                        set_subtitle: "每次进行同步录制时，都在视频保存目录下创建新的文件夹，并在其中保存录制的视频文件",
-                        add_suffix: video_sync_record_use_separate_directory_switch = &Switch {
-                            set_active: track!(model.changed(PreferencesModel::video_sync_record_use_separate_directory()), *model.get_video_sync_record_use_separate_directory()),
-                            set_valign: Align::Center,
-                            connect_state_set(sender) => move |_switch, state| {
-                                send!(sender, PreferencesMsg::SetVideoSyncRecordUseSeparateDirectory(state));
-                                Inhibit(false)
-                            }
-                        },
-                        set_activatable_widget: Some(&video_sync_record_use_separate_directory_switch),
                     },
                     add = &ExpanderRow {
                         set_title: "默认录制时重新编码",
