@@ -1,19 +1,19 @@
 /* param_tuner.rs
  *
- * Copyright 2021-2022 Bohong Huang
+ *   Copyright (C) 2021-2023  Bohong Huang, Jianfeng Peng, JMU Underwater Lab
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ *   This program is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 use async_std::task;
@@ -616,7 +616,7 @@ impl MicroWidgets<SlaveParameterTunerModel> for SlaveParameterTunerWidgets {
             .into_iter()
             .find_map(|x| x.dynamic_cast().ok()) // 将子元素转换为Box类型
             .unwrap(); // 获取第一个子元素并将其转换为HeaderBar类型
-        let header_bar: HeaderBar = root_box.first_child().unwrap().dynamic_cast().unwrap();  // 获取root_box的第一个子元素，并将其转换为HeaderBar类型
+        let header_bar: HeaderBar = root_box.first_child().unwrap().dynamic_cast().unwrap(); // 获取root_box的第一个子元素，并将其转换为HeaderBar类型
         relm4_macros::view! {
             HeaderBar::from(header_bar) {
                 pack_start = &Button {
@@ -695,47 +695,68 @@ async fn parameter_tuner_main_loop(
     graph_view_update_interval: u64,
 ) -> Result<(), SlaveParameterTunerError> {
     fn current_millis() -> u128 {
+        // 获取当前时间距离UNIX纪元持续时间
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_millis()
     }
+    // 预览时间（毫秒）
     const PREVIEW_TIME_MILLIS: u128 = 1000;
+
+    // 上次螺旋桨预览时间戳
     let last_propeller_preview_timestamp =
         async_std::sync::Arc::new(async_std::sync::Mutex::new(None as Option<u128>));
+
+    // 预览螺旋桨值
     let preview_propellers_value =
         async_std::sync::Arc::new(async_std::sync::Mutex::new(HashMap::<String, i8>::new()));
+
+    // 预览控制循环
     let preview_control_loops =
         async_std::sync::Arc::new(async_std::sync::Mutex::new(
             HashMap::<String, ControlLoop>::new(),
         ));
+
+    // 接收任务
     let receive_task = task::spawn(
         clone!(@strong rpc_client, @strong model_sender, @strong communication_sender => async move {
-            loop {
-                match rpc_client.request::<SlaveParameterTunerFeedbackPacket>(METHOD_GET_FEEDBACKS, None).await {
-                    Ok(packet) => send!(model_sender, SlaveParameterTunerMsg::FeedbacksReceived(packet)),
-                    Err(err) => communication_sender.send(SlaveParameterTunerCommunicationMsg::ConnectionLost(err)).await.unwrap_or_default(),
-                }
-                task::sleep(Duration::from_millis(graph_view_update_interval)).await;
-            }
+               loop {
+                   match rpc_client.request::<SlaveParameterTunerFeedbackPacket>(METHOD_GET_FEEDBACKS, None).await {
+                       // 如果请求成功，发送反馈消息给模型发送器
+                       Ok(packet) => send!(model_sender, SlaveParameterTunerMsg::FeedbacksReceived(packet)),
+                       // 如果请求失败，发送连接丢失消息给通信发送器
+                       Err(err) => communication_sender.send(SlaveParameterTunerCommunicationMsg::ConnectionLost(err)).await.unwrap_or_default(),
+                   }
+                   // 等待一段时间后续循环
+                   task::sleep(Duration::from_millis(graph_view_update_interval)).await;
+               }
         }),
     );
 
+    // 参数预览任务
     let parameter_preview_task = task::spawn(
         clone!(@strong communication_sender, @strong preview_propellers_value, @strong preview_control_loops => async move {
             loop {
+                // 如果预览螺旋桨值不为空
                 if !preview_propellers_value.lock().await.is_empty() {
+                    // 获取并清空预览螺旋桨值
                     let propeller_values = std::mem::replace(&mut *preview_propellers_value.lock().await, HashMap::new());
+                    // 发送预览螺旋消息给通信发送器，如果发送失败则退出循环
                     if communication_sender.send(SlaveParameterTunerCommunicationMsg::PreviewPropellers(propeller_values)).await.is_err() {
                         break;
                     }
                 }
+                // 如果预览控制循环不为空
                 if !preview_control_loops.lock().await.is_empty() {
+                    // 获取并清空预览控制循环
                     let control_loops = std::mem::replace(&mut *preview_control_loops.lock().await, HashMap::new());
+                    // 发送预览控制循环消息给通信发送，如果发送失败则退出循环
                     if communication_sender.send(SlaveParameterTunerCommunicationMsg::PreviewControlLoops(control_loops)).await.is_err() {
                         break;
                     }
                 }
+                // 等待一段时间后继续循环
                 task::sleep(Duration::from_millis(100)).await;
 
             }
@@ -747,14 +768,16 @@ async fn parameter_tuner_main_loop(
             loop {
                 let mut last_millis = last_propeller_preview_timestamp.lock().await;
                 if let Some(millis) = *last_millis {
+                    // 检查是否超过预览时间
                     if current_millis() - millis >= PREVIEW_TIME_MILLIS {
+                         // 发送预览指令
                         if communication_sender.send(SlaveParameterTunerCommunicationMsg::PreviewPropellers(DEFAULT_PROPELLERS.iter().map(|x| (x.to_string(), 0i8)).collect())).await.is_err() {
                             break;
                         }
                         *last_millis = None;
                     }
                 }
-                drop(last_millis);        // 防止阻塞主循环
+                drop(last_millis);
                 task::sleep(Duration::from_millis(500)).await;
             }
         }),
@@ -769,6 +792,7 @@ async fn parameter_tuner_main_loop(
         match communication_receiver.recv().await {
             Ok(msg) => match msg {
                 SlaveParameterTunerCommunicationMsg::UploadParameters(parameters) => {
+                    // 上传参数
                     match rpc_client
                         .batch_request::<()>(vec![
                             (
@@ -790,6 +814,7 @@ async fn parameter_tuner_main_loop(
                             if let Err(err) =
                                 rpc_client.request::<()>(METHOD_SAVE_PARAMETERS, None).await
                             {
+                                // 发送连接丢失消息
                                 communication_sender
                                     .send(SlaveParameterTunerCommunicationMsg::ConnectionLost(err))
                                     .await
@@ -805,11 +830,13 @@ async fn parameter_tuner_main_loop(
                     };
                 }
                 SlaveParameterTunerCommunicationMsg::RequestParameters => {
+                    // 请求参数
                     match rpc_client
                         .request::<SlaveParameterTunerParameterPacket>(METHOD_LOAD_PARAMETERS, None)
                         .await
                     {
                         Ok(packet) => {
+                            // 发送接收到参数的消息
                             send!(
                                 model_sender,
                                 SlaveParameterTunerMsg::ParametersReceived(packet)
@@ -823,6 +850,7 @@ async fn parameter_tuner_main_loop(
                         }
                     }
                 }
+                // 设置调试模式
                 SlaveParameterTunerCommunicationMsg::Terminate(error) => {
                     receive_task.cancel().await;
                     parameter_preview_task.cancel().await;
@@ -832,6 +860,7 @@ async fn parameter_tuner_main_loop(
                         None => break,
                     }
                 }
+                // 发送连接丢失消息
                 SlaveParameterTunerCommunicationMsg::ConnectionLost(err) => {
                     send!(
                         model_sender,
@@ -840,6 +869,7 @@ async fn parameter_tuner_main_loop(
                         ))
                     );
                 }
+                // 设置调试模式
                 SlaveParameterTunerCommunicationMsg::SetDebugModeEnabled(enabled) => {
                     if let Err(err) = rpc_client
                         .request::<()>(METHOD_SET_DEBUG_MODE_ENABLED, Some(enabled.to_rpc_params()))
@@ -850,11 +880,12 @@ async fn parameter_tuner_main_loop(
                             .await
                             .unwrap_or_default();
                     }
-                }
+                } // 预览推进器
                 SlaveParameterTunerCommunicationMsg::PreviewPropeller(name, value) => {
                     preview_propellers_value.lock().await.insert(name, value);
                     *last_propeller_preview_timestamp.lock().await = Some(current_millis());
                 }
+                // 预览推进器列表
                 SlaveParameterTunerCommunicationMsg::PreviewPropellers(propeller_values) => {
                     if let Err(err) = rpc_client
                         .request::<()>(
@@ -883,6 +914,7 @@ async fn parameter_tuner_main_loop(
                             .unwrap_or_default();
                     }
                 }
+                // 预览控制回路列表
                 SlaveParameterTunerCommunicationMsg::PreviewControlLoop(name, value) => {
                     preview_control_loops.lock().await.insert(name, value);
                 }

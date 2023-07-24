@@ -1,19 +1,19 @@
 /* main.rs
  *
- * Copyright 2021-2022 Bohong Huang
+ *   Copyright (C) 2021-2023  Bohong Huang, Jianfeng Peng, JMU Underwater Lab
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ *   This program is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 pub mod async_glib;
@@ -28,10 +28,7 @@ use std::{cell::RefCell, net::Ipv4Addr, rc::Rc, str::FromStr};
 
 use adw::{prelude::*, ApplicationWindow, CenteringPolicy, HeaderBar};
 use glib::{clone, MainContext, Sender, WeakRef, PRIORITY_DEFAULT};
-use gtk::{
-    AboutDialog, Align, Box as GtkBox, Grid, Inhibit, License, MenuButton, Orientation,
-    ToggleButton,
-};
+use gtk::{AboutDialog, Align, Box as GtkBox, Grid, Inhibit, License, MenuButton, Orientation};
 use relm4::{
     actions::{RelmAction, RelmActionGroup},
     factory::FactoryVec,
@@ -67,14 +64,14 @@ impl Widgets<AboutModel, AppModel> for AboutWidgets {
                 window.hide();
                 Inhibit(true)
             },
-            set_website: Some("https://github.com/BohongHuang/rov-host"),
+            set_website: Some("https://JMU-Underwater.github.io"),
             set_authors: &["黄博宏 https://bohonghuang.github.io", "彭剑锋 https://qff233.com"],
             set_program_name: Some("水下机器人上位机"),
             set_copyright: Some("© 2021-2023 集美大学水下智能创新实验室"),
             set_comments: Some("跨平台的水下机器人上位机程序"),
             set_logo_icon_name: Some("input-gaming"),
             set_version: Some(env!("CARGO_PKG_VERSION")),
-            set_license_type: License::Gpl30,
+            set_license_type: License::Agpl30,
         }
     }
 }
@@ -157,14 +154,6 @@ impl Widgets<AppModel, ()> for AppWidgets {
                         set_icon_name: "open-menu-symbolic",
                         set_focus_on_click: false,
                         set_valign: Align::Center,
-                    },
-                    pack_end = &ToggleButton {
-                        set_icon_name: "view-fullscreen-symbolic",
-                        set_tooltip_text: Some("切换全屏模式"),
-                        set_active: track!(model.changed(AppModel::fullscreened()), *model.get_fullscreened()),
-                        connect_clicked(sender) => move |button| {
-                            send!(sender, AppMsg::SetFullscreened(button.is_active()));
-                        }
                     },
                 },
                 append: body_stack = &Grid {

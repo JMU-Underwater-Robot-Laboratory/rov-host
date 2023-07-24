@@ -1,19 +1,19 @@
 /* preferences.rs
  *
- * Copyright 2021-2022 Bohong Huang
+ *   Copyright (C) 2021-2023  Bohong Huang, Jianfeng Peng, JMU Underwater Lab
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ *   This program is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 use std::{fs, path::PathBuf, str::FromStr};
@@ -241,7 +241,7 @@ impl ComponentUpdate<AppModel> for PreferencesModel {
                 self.set_default_keep_video_display_ratio(value) // 设置默认的视频显示比例
             }
             
-            PreferencesMsg::SaveToFile => serde_json::to_string_pretty(&self) // 将当前对象序列为漂亮格式的 JSON 字符串
+            PreferencesMsg::SaveToFile => serde_json::to_string_pretty(&self) // 将当前对象序列为 JSON 字符串
                 .ok()
                 .and_then(|json| fs::write(get_preference_path(), json).ok()) // 将 JSON 字符串写文件
                 .unwrap(),

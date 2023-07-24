@@ -1,19 +1,19 @@
 /* video.rs
  *
- * Copyright 2021-2022 Bohong Huang
+ *   Copyright (C) 2021-2023  Bohong Huang, Jianfeng Peng, JMU Underwater Lab
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ *   This program is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 use std::{str::FromStr, sync::{Arc, Mutex}, ffi::c_void};
@@ -172,37 +172,37 @@ pub fn create_pipeline(url: &Url) -> Result<gst::Pipeline, String> {
     // 获取解器元素列表
     let decoder_elements = gst_main_elements()?;
     
-    // 向管道添加多个元素：video_src、appsink、tee_decoded、tee_source、queue_to_app、queue_to_decode，并返回错误信息"Cannot create pipeline"，如果添加失败。
+    // 向管道添加多个元素：video_src、appsink、tee_decoded、tee_source、queue_to_app、queue_to_decode
     pipeline.add_many(&[&video_src, &appsink, &tee_decoded, &tee_source, &queue_to_app, &queue_to_decode]).map_err(|_| "无法创建管道")?;
 
-    // 向管道添加颜色间转换元素的集合colorspace_conversion_elements，并返回错误信息"Cannot add colorspace conversion elements to pipeline"，如果添加失败。
+    // 向管道添加颜色间转换元素的集合colorspace_conversion_elements，
     pipeline.add_many(&colorspace_conversion_elements.iter().collect::<Vec<_>>()).map_err(|_| "无法将颜色空间转换元素添加到管道")?;
 
-    // 遍历depay_elements中的每个元素，将其添加到管道，并返回错误信息"Cannot add depay elements to pipeline"如果添加失败。
+    // 遍历depay_elements中的每个元素，将其添加到管道
     for depay_element in depay_elements {
         pipeline.add(depay_element).map_err(|_| "无将depay元素添加到管道")?;
     }
 
-    // 遍历decoder_elements中的每个元素，将其添加到管道，并返回错误信息"Cannot add decoder elements element"，如果添加失败。
+    // 遍历decoder_elements中的每个元素，将其添加到管道
     for decoder_element in &decoder_elements {
         pipeline.add(decoder_element).map_err(|_| "无法将解码器元素添加到管道")?;
     }
 
-    // 遍历depay_elements中的每个相邻元素，将它们链接起来，并返回错误信息"Cannot link elements between depay elements"，如果链接失败。
+    // 遍历depay_elements中的每个相邻元素，将它们链接起来
     for element in depay_elements.windows(2) {
         if let [a, b] = element {
             a.link(b).map_err(|_| "无法在de元素之间建立链接")?;
         }
     }
 
-    // 遍历decoder_elements的每两个邻元素，将它们链接起来，并返回错误信息"Cannot link elements between decoder elements"，如果链接失败。
+    // 遍历decoder_elements的每两个邻元素，将它们链接起来
     for element in decoder_elements.windows(2) {
         if let [a, b] = element {
             a.link(b).map_err(|_| "无法解码器元素之建立链接")?;
         }
     }
 
-    // 遍历colorspace_conversion_elements中的每两个相邻元素，将它们链接起来，并返回错误信息"Cannot link elements between colorspace conversion elements"，如果链接失败。
+    // 遍历colorspace_conversion_elements中的每两个相邻元素，将它们链接起来
     for element in colorspace_conversion_elements.windows(2) {
         if let [a, b] = element {
             a.link(b).map_err(|_| "无法在色空间转元素之间建链接")?;
@@ -292,7 +292,7 @@ fn correct_underwater_color(src: Mat) -> Mat {
     let mut channels = cv::types::VectorOfMat::new();
     
     // 将图像拆分成通图像
-    cv::core::split(&image, &mut channels).expect("法拆分图像");
+    cv::core::split(&image, &mut channels).expect("无法拆分图像");
     
     // 创建均值和标准差变量
     let [mut mean, mut std] = [cv::core::Scalar::default(); 2];
@@ -302,7 +302,7 @@ fn correct_underwater_color(src: Mat) -> Mat {
     
     // 创建一个新的图像对象，并将原始图像调整为128x128大小
     let mut image = Mat::default();
-    cv::imgproc::resize(&image_original_size, &mut image, Size::new(128, 128), 0.0, 0.0, imgproc::INTER_NEAREST).expect("Cannot resize image");
+    cv::imgproc::resize(&image_original_size, &mut image, Size::new(128, 128), 0.0, 0.0, imgproc::INTER_NEAREST).expect("无法缩放");
     
     // 计算图像的均值标准差
     cv::core::mean_std_dev(&image, &mut mean, &mut std, &cv::core::no_array()).expect("无法计算图的均值和标准差");
@@ -319,7 +319,7 @@ fn correct_underwater_color(src: Mat) -> Mat {
     // 将归一化后的通道图像重新组合成一个图像对象
     let channels = VectorOfMat::from_iter(channels);
     let mut image = Mat::default();
-    cv::core::merge(&channels, &mut image).expect("法合并通道图像");
+    cv::core::merge(&channels, &mut image).expect("无法合并通道图像");
     
     // 创建结果图像对象
     let mut result = Mat::default();
