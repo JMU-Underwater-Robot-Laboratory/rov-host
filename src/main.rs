@@ -46,9 +46,7 @@ use strum_macros::EnumIter;
 
 use crate::input::{InputEvent, InputSystem};
 use crate::preferences::PreferencesModel;
-use crate::slave::{
-    slave_config::SlaveConfigModel, MyComponent, SlaveModel, SlaveMsg,
-};
+use crate::slave::{slave_config::SlaveConfigModel, MyComponent, SlaveModel, SlaveMsg};
 
 struct AboutModel {}
 enum AboutMsg {}
@@ -190,28 +188,42 @@ impl Widgets<AppModel, ()> for AppWidgets {
     }
 
     fn post_init() {
-
+        // 创建一个新 RelmActionGroup 对象，用于管理作
         let app_group = RelmActionGroup::<AppActionGroup>::new();
 
+        // 定义 action_preferences 动作，当触时发送 AppMsg::OpenPreferencesWindow 消息给 sender
         let action_preferences: RelmAction<PreferencesAction> =
             RelmAction::new_stateless(clone!(@strong sender => move |_| {
                 send!(sender, AppMsg::OpenPreferencesWindow);
             }));
+
+        // 定义 action_about 动作，当触发时发送 AppMsg::OpenAboutDialog 消息给 sender
         let action_about: RelmAction<AboutDialogAction> =
             RelmAction::new_stateless(clone!(@strong sender => move |_| {
                 send!(sender, AppMsg::OpenAboutDialog);
             }));
 
+        // 将动作添加到 app_group 中
         app_group.add_action(action_preferences);
         app_group.add_action(action_about);
+
+        // 将 app_group 插入到 app_window 中的 "main" 动作组中
         app_window.insert_action_group("main", Some(&app_group.into_action_group()));
+
+        // 发送 AppMsg::Slave 消息给 sender，payload 为 app_window 的弱引用
         send!(sender, AppMsg::NewSlave(app_window.clone().downgrade()));
+
+        // 创建一个通道，返回发送器和接收器
         let (input_event_sender, input_event_receiver) = MainContext::channel(PRIORITY_DEFAULT);
+
+        // 将 input_event_sender 分配给 model.input_system.event_sender
         *model.input_system.event_sender.borrow_mut() = Some(input_event_sender);
 
+        // 附加 input_event_receiver 来处理输入事件
         input_event_receiver.attach(
             None,
             clone!(@strong sender => move |event| {
+                // 发送 AppMsg::DispatchInputEvent 消息给 senderpayload 为接收到事件
                 send!(sender, AppMsg::DispatchInputEvent(event));
                 Continue(true)
             }),
@@ -240,18 +252,23 @@ impl AppUpdate for AppModel {
         self.reset();
         match msg {
             AppMsg::OpenAboutDialog => {
+                // 打开关于对话框
                 components.about.root_widget().present();
             }
             AppMsg::OpenPreferencesWindow => {
+                // 打开首选项窗口
                 components.preferences.root_widget().present();
             }
             AppMsg::NewSlave(app_window) => {
+                // 创建新的从属应用窗口
                 let index = self.get_slaves().len() as u8;
                 let mut slave_url: url::Url = self
                     .get_preferences()
                     .borrow()
                     .get_default_slave_url()
                     .clone();
+
+                // 如果从属 URL 的主机部是有效的 IPv4 地址，则根据索引增加 IP 地址的最一位
                 if let Some(ip) = slave_url
                     .host_str()
                     .and_then(|str| Ipv4Addr::from_str(str).ok())
@@ -262,6 +279,8 @@ impl AppUpdate for AppModel {
                         .set_host(Some(Ipv4Addr::from(ip_octets).to_string().as_str()))
                         .unwrap_or_default();
                 }
+
+                // 根据索引增加视频 URL 的端口号
                 let mut video_url = self
                     .get_preferences()
                     .borrow()
@@ -272,10 +291,14 @@ impl AppUpdate for AppModel {
                         .set_port(Some(port.wrapping_add(index as u16)))
                         .unwrap();
                 }
+
+                // 创建输入事件通道和从属事件通道
                 let (input_event_sender, input_event_receiver) =
                     MainContext::channel(PRIORITY_DEFAULT);
                 let (slave_event_sender, slave_event_receiver) =
                     MainContext::channel(PRIORITY_DEFAULT);
+
+                // 根据首选项创建从属配置模型
                 let mut slave_config =
                     SlaveConfigModel::from_preferences(&self.preferences.borrow());
                 slave_config.set_slave_url(slave_url);
@@ -286,14 +309,20 @@ impl AppUpdate for AppModel {
                         .borrow()
                         .get_default_keep_video_display_ratio(),
                 );
+
+                // 创建属模型并关联事件发送器
                 let slave = SlaveModel::new(
                     slave_config,
                     self.get_preferences().clone(),
                     &slave_event_sender,
                     input_event_sender,
                 );
+
+                // 创建组件并获取其事件发送器
                 let component = MyComponent::new(slave, (sender.clone(), app_window));
                 let component_sender = component.sender().clone();
+
+                // 将输入事件接收器与组件的事件发送器关联
                 input_event_receiver.attach(
                     None,
                     clone!(@strong component_sender => move |event| {
@@ -301,6 +330,8 @@ impl AppUpdate for AppModel {
                         Continue(true)
                     }),
                 );
+
+                // 将从属事件接收器与组件的事件发送器关联
                 slave_event_receiver.attach(
                     None,
                     clone!(@strong component_sender => move |event| {
@@ -308,21 +339,30 @@ impl AppUpdate for AppModel {
                         Continue(true)
                     }),
                 );
+
+                // 将组件添加到从属列表中
                 self.get_mut_slaves().push(component);
+
+                // 设置同步录制状态为 false
                 self.set_sync_recording(Some(false));
             }
             AppMsg::PreferencesUpdated(preferences) => {
+                // 更新首选项
                 *self.get_mut_preferences().borrow_mut() = preferences;
             }
             AppMsg::DispatchInputEvent(InputEvent(source, event)) => {
+                // 遍历所有从属模块
                 for slave in self.slaves.iter() {
                     let slave_model = slave.model().unwrap();
+                    // 获取从属模块的输入源列表，并检查是否包含当前事件的来源
                     if slave_model.get_input_sources().contains(&source) {
+                        // 将事件发送给从属模块的输入事件发送器
                         slave_model.input_event_sender.send(event.clone()).unwrap();
                     }
                 }
             }
             AppMsg::StopInputSystem => {
+                // 停止输入系统
                 self.input_system.stop();
             }
             AppMsg::SetFullscreened(fullscreened) => self.set_fullscreened(fullscreened),
@@ -332,17 +372,29 @@ impl AppUpdate for AppModel {
 }
 
 fn main() {
-    gst::init().expect("无法初始化 GStreamer");
+    // 初始化GStreamer库
+    gst::init().expect("无初始化 GStreamer");
+
+    // 初始化GTK4库和adw库
     gtk::init().map(|_| adw::init()).expect("无法初始化 GTK4");
 
+    // 获取默认GTK设置
     let setting = gtk::Settings::default().unwrap();
+
+    // 设置GTK主题为"Windows10"
     setting.set_gtk_theme_name(Some("Windows10"));
 
+    // 创建应用程序模型例
     let model = AppModel {
+        // 初始化偏好设置，从存储中加载或创建默认设置
         preferences: Rc::new(RefCell::new(PreferencesModel::load_or_default())),
         ..Default::default()
     };
+
+    // 运行输入系统
     model.input_system.run();
+
+    // 创建并运行Relm应用程序
     let relm = RelmApp::new(model);
-    relm.run()
+    relm.run();
 }

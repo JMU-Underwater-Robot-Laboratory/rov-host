@@ -33,7 +33,9 @@ impl<T> Clone for Future<T>
 where
     T: Send + Sync,
 {
+    // 实现 Clone trait 的 clone 方法
     fn clone(&self) -> Self {
+        // 创建一个新的 Future 实例，并复 callbacks 和 state 字段
         Self {
             callbacks: self.callbacks.clone(),
             state: self.state.clone(),
@@ -45,6 +47,7 @@ impl<T> Future<T>
 where
     T: Send + Sync + 'static,
 {
+    /// 创建一个新的 Future 实例。
     fn new() -> Self {
         Self {
             callbacks: Default::default(),
@@ -52,6 +55,7 @@ where
         }
     }
 
+    /// 将成功的值传递给 Future 实例。
     fn success(&mut self, value: Arc<T>) {
         *self.state.lock().unwrap() = Some(Ok(value.clone()));
         while let Some(callback) = self.callbacks.lock().unwrap().pop() {
@@ -59,6 +63,7 @@ where
         }
     }
 
+    /// 创建一个应用了给定值的 Future 实例。
     pub fn apply(t: T) -> Future<T> {
         let promise = Promise::new();
         let future = promise.future();
@@ -66,6 +71,7 @@ where
         future
     }
 
+    /// 将一组 Future 实例按顺序执行，并返回结果的 Future 实例。
     pub fn sequence<I: Iterator<Item = Future<T>> + Send + 'static>(
         iter: I,
     ) -> Future<Vec<Arc<T>>> {
@@ -89,6 +95,7 @@ where
         })(iter)
     }
 
+    /// 对 Future 实例的结果应用给定的函数，并返回新的 Future 实例。
     pub fn map<U, F>(&self, f: F) -> Future<U>
     where
         U: Send + Sync + 'static,
@@ -102,6 +109,7 @@ where
         future
     }
 
+    /// 对 Future 实例的结果应用给定的函数，该函数返回一个新的 Future 实例，并返回新 Future 实例。
     pub fn flat_map<U, F>(&self, f: F) -> Future<U>
     where
         U: Send + Sync + Clone + 'static,
@@ -115,6 +123,7 @@ where
         future
     }
 
+    /// 对 Future 实例的结果应用给定的函数。
     pub fn for_each<F>(&self, f: F)
     where
         F: FnOnce(Arc<T>) + Send + 'static,
@@ -133,10 +142,15 @@ impl<T> From<T> for Future<T>
 where
     T: Send + Sync + 'static,
 {
+    /// 从类型 `T` 转换为 `Future<T>`。
     fn from(t: T) -> Self {
+        // 创建一个 Promise 对象
         let promise = Promise::new();
+        // 从 Promise 中获取 Future 对象
         let future = promise.future();
+        // 将值 `t` 设置为 Promise 的成功结果
         promise.success(t);
+        // 返回 Future 对象
         future
     }
 }
@@ -153,6 +167,7 @@ impl<T> Promise<T>
 where
     T: Send + Sync + 'static,
 {
+    /// 创建一个新 Promise 实例。
     pub fn new() -> Self {
         let (sender, receiver) = MainContext::channel(glib::PRIORITY_DEFAULT);
         let future = Future::new();
@@ -166,10 +181,18 @@ where
         Promise { sender, future }
     }
 
+    /// 将值成功地传递给 Promise。
+    ///
+    /// # 参数
+    ///
+    /// * `value` - 要传递的值。
     pub fn success(self, value: T) {
         self.sender.send(Arc::new(value)).unwrap();
     }
 
+    /// 获取 Promise 关联的 Future。
+    ///
+    /// 返回一个 Future，用于等待 Promise 的结果。
     pub fn future(&self) -> Future<T> {
         self.future.clone()
     }

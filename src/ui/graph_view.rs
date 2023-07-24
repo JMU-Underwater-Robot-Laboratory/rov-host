@@ -455,14 +455,3 @@ impl GraphView {
         }
     }
 }
-
-// #[derive(Clone, glib::Boxed)]
-// #[boxed_type(name = "FnBoxedTuple")]
-// #[allow(clippy::type_complexity)]
-// pub struct FnBoxedTuple(pub Rc<RefCell<Option<Box<dyn Fn(&Tuple) -> String>>>>);
-
-// impl FnBoxedTuple {
-//     pub fn new(func: Option<Box<dyn Fn(&Tuple) -> String>>) -> Self {
-//         Self(Rc::new(RefCell::new(func)))
-//     }
-// }

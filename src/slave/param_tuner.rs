@@ -484,21 +484,29 @@ impl FactoryPrototype for ControlLoopModel {
 
 impl SlaveParameterTunerModel {
     pub fn new(graph_view_point_num_limit: u16, graph_view_update_interval: u16) -> Self {
+        // 创建一个SlaveParameterTunerModel实例，并设置初始值
         SlaveParameterTunerModel {
+            // 使用FactoryVec::from_vec方法将DEFAULT_PROPELL转换为propellers字段的
             propellers: FactoryVec::from_vec(
+                // 对DEFAULT_PROPELLERS进行迭代，对每个元素调用PropellerModel::new方法创建新的PropellerModel实例
                 DEFAULT_PROPELLERS
                     .iter()
                     .map(|key| PropellerModel::new(key))
                     .collect(),
             ),
+            // 使用FactoryVec::from_vec方法将DEFAULT_CONTROL_LOOPS换为control_loops字段的值
             control_loops: FactoryVec::from_vec(
+                // 对DEFAULT_CONTROL_LOOPS进行迭代，对每个元素调用ControlLoopModel::new方法创建新的ControlLoopModel实例
                 DEFAULT_CONTROL_LOOPS
                     .iter()
                     .map(|key| ControlLoopModel::new(key))
                     .collect(),
             ),
+            // 设置graph_view_point_num_limit字段的值为传入的参数graph_view_point_num_limit
             graph_view_point_num_limit,
+            // 设置graph_view_update_interval字段的值为传入的参数graph_view_update_interval
             graph_view_update_interval,
+            // 使用默认值初始化其他字段
             ..Default::default()
         }
     }
@@ -588,8 +596,8 @@ impl MicroWidgets<SlaveParameterTunerModel> for SlaveParameterTunerWidgets {
         }
     }
     fn post_init() {
-        let groups = [&group_propeller, &group_pid];
-        let clamps = groups
+        let groups = [&group_propeller, &group_pid]; // 创建一个含两个元素的数组
+        let clamps = groups // 对groups进行迭代
             .iter()
             .map(|x| {
                 x.parent()
@@ -598,16 +606,17 @@ impl MicroWidgets<SlaveParameterTunerModel> for SlaveParameterTunerWidgets {
             })
             .filter_map(|x| x);
         for clamp in clamps {
-            clamp.set_maximum_size(10000);
+            // 对clamps进行迭代
+            clamp.set_maximum_size(10000); // 设置clamp的最大尺寸为10000
         }
-        let overlay: ToastOverlay = window.content().unwrap().dynamic_cast().unwrap();
-        let leaflet: Leaflet = overlay.child().unwrap().dynamic_cast().unwrap();
-        let root_box: GtkBox = leaflet
+        let overlay: ToastOverlay = window.content().unwrap().dynamic_cast().unwrap(); //获取窗口的内容，并将其转换为ToastOverlay类型
+        let leaflet: Leaflet = overlay.child().unwrap().dynamic_cast().unwrap(); // 获取overlay子元素，并将其转换为Leaf类型
+        let root_box: GtkBox = leaflet // 对leaflet的子素进行观察
             .observe_children()
             .into_iter()
-            .find_map(|x| x.dynamic_cast().ok())
-            .unwrap();
-        let header_bar: HeaderBar = root_box.first_child().unwrap().dynamic_cast().unwrap();
+            .find_map(|x| x.dynamic_cast().ok()) // 将子元素转换为Box类型
+            .unwrap(); // 获取第一个子元素并将其转换为HeaderBar类型
+        let header_bar: HeaderBar = root_box.first_child().unwrap().dynamic_cast().unwrap();  // 获取root_box的第一个子元素，并将其转换为HeaderBar类型
         relm4_macros::view! {
             HeaderBar::from(header_bar) {
                 pack_start = &Button {

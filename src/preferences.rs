@@ -238,29 +238,33 @@ impl ComponentUpdate<AppModel> for PreferencesModel {
         self.reset();
         match msg {
             PreferencesMsg::SetDefaultKeepVideoDisplayRatio(value) => {
-                self.set_default_keep_video_display_ratio(value)
+                self.set_default_keep_video_display_ratio(value) // 设置默认的视频显示比例
             }
-            PreferencesMsg::SaveToFile => serde_json::to_string_pretty(&self)
+            
+            PreferencesMsg::SaveToFile => serde_json::to_string_pretty(&self) // 将当前对象序列为漂亮格式的 JSON 字符串
                 .ok()
-                .and_then(|json| fs::write(get_preference_path(), json).ok())
+                .and_then(|json| fs::write(get_preference_path(), json).ok()) // 将 JSON 字符串写文件
                 .unwrap(),
-            PreferencesMsg::OpenVideoDirectory => gtk::show_uri(
-                None as Option<&PreferencesWindow>,
-                glib::filename_to_uri(crate::preferences::get_video_path().to_str().unwrap(), None)
+            
+            PreferencesMsg::OpenVideoDirectory => gtk::show_uri( // 打开视频目录
+             None as Option<&PreferencesWindow>,
+                glib::filename_to_uri(crate::preferences::get_video_path().to_str().unwrap(), None) // 获取视频路径并转换为 URI
                     .unwrap()
                     .as_str(),
                 gdk::CURRENT_TIME,
             ),
-            PreferencesMsg::OpenImageDirectory => gtk::show_uri(
+            
+            PreferencesMsg::OpenImageDirectory => gtk::show_uri( // 打开图目录
                 None as Option<&PreferencesWindow>,
-                glib::filename_to_uri(crate::preferences::get_video_path().to_str().unwrap(), None)
+                glib::filename_to_uri(crate::preferences::get_video_path().to_str().unwrap(), None) // 获取图像路径并转换为 URI
                     .unwrap()
                     .as_str(),
                 gdk::CURRENT_TIME,
             ),
-            PreferencesMsg::SetDefaultVideoUrl(url) => self.default_video_url = url, // 防止输入框的光标移动至最前
-            PreferencesMsg::SetDefaultSlaveUrl(url) => self.default_slave_url = url,
-
+            
+            PreferencesMsg::SetDefaultVideoUrl(url) => self.default_video_url = url, // 设置默认的视频 URL（防输入框光标移动至最前）
+            
+            PreferencesMsg::SetDefaultSlaveUrl(url) => self.default_slave_url = url, // 设置默认的从属 URL
         }
         send!(parent_sender, AppMsg::PreferencesUpdated(self.clone()));
     }

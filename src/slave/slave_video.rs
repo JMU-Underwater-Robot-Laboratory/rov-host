@@ -21,7 +21,8 @@ use std::{
     fmt::Debug,
     path::PathBuf,
     rc::Rc,
-    sync::{Arc, Mutex}, time::Duration,
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use adw::StatusPage;
@@ -38,7 +39,7 @@ use super::{slave_config::SlaveConfigModel, SlaveMsg};
 use crate::{
     async_glib::{Future, Promise},
     preferences::PreferencesModel,
-    slave::video:: MatExt,
+    slave::video::MatExt,
 };
 
 #[tracker::track]
@@ -108,23 +109,35 @@ impl MicroModel for SlaveVideoModel {
             }
             SlaveVideoMsg::StartRecord(pathbuf) => {
                 if let Some(pipeline) = &self.pipeline {
+                    // 定义一个公共函数，用于创建配置录制所需元素
                     pub fn gst_record_elements(filename: &str) -> Result<Vec<Element>, String> {
                         let mut elements = Vec::new();
+
+                        // 创建并添加队列元素
                         let queue_to_file = gst::ElementFactory::make("queue", None)
-                            .map_err(|_| "Missing element: queue")?;
+                            .map_err(|_| "缺少元素：queue")?;
                         elements.push(queue_to_file);
+
+                        // 创建并添加H265解析器元素
                         let parse = gst::ElementFactory::make("h265parse", None)
-                            .map_err(|_| "Missing element: h265parse")?;
+                            .map_err(|_| "缺少元素：h265parse")?;
                         elements.push(parse);
+
+                        // 创建并添加Matroska复用器元素
                         let matroskamux = gst::ElementFactory::make("matroskamux", None)
-                            .map_err(|_| "Missing muxer: matroskamux")?;
+                            .map_err(|_| "缺少复用器：matroskamux")?;
                         elements.push(matroskamux);
+
+                        // 创建并添加文件输出元素
                         let filesink = gst::ElementFactory::make("filesink", None)
-                            .map_err(|_| "Missing element: filesink")?;
+                            .map_err(|_| "缺少元素：filesink")?;
                         filesink.set_property("location", filename);
                         elements.push(filesink);
+
                         Ok(elements)
                     }
+
+                    // 获取录制处理句柄
                     let record_handle = {
                         let elements = gst_record_elements(&pathbuf.to_str().unwrap());
                         let elements_and_pad = elements.and_then(|elements| {
@@ -137,12 +150,16 @@ impl MicroModel for SlaveVideoModel {
                         });
                         elements_and_pad
                     };
+
+                    // 处理录制处理句柄的结果
                     match record_handle {
                         Ok((elements, pad)) => {
+                            // 将录制处理句柄保存到self.record_handle中，并发送RecordingChanged消息给父进程
                             self.record_handle = Some((pad, Vec::from(elements)));
                             send!(parent_sender, SlaveMsg::RecordingChanged(true));
                         }
                         Err(err) => {
+                            // 发送ErrorMessage和RecordingChanged消息给父进程，表示录制处理失败
                             send!(parent_sender, SlaveMsg::ErrorMessage(err.to_string()));
                             send!(parent_sender, SlaveMsg::RecordingChanged(false));
                         }
@@ -151,17 +168,24 @@ impl MicroModel for SlaveVideoModel {
             }
             SlaveVideoMsg::StopRecord(promise) => {
                 if let Some(pipeline) = &self.pipeline {
+                    // 如果存在 pipeline
                     if let Some((teepad, elements)) = &self.record_handle {
+                        // 如果存在 record_handle
                         super::video::disconnect_elements_to_pipeline(pipeline, teepad, elements)
                             .unwrap()
                             .for_each(clone!(@strong parent_sender => move |_| {
+                                // 断开元素与 pipeline 的连接，并每个断开的元素执行以下操作
                                 send!(parent_sender, SlaveMsg::RecordingChanged(false));
+                                // 向父发送者发送消息，表示录制状态已更改 false
                                 if let Some(promise) = promise {
+                                    // 如果存在 promise
                                     promise.success(());
+                                    // 完成 promise
                                 }
                             }));
                     }
                     self.set_record_handle(None);
+                    // 清空 record_handle
                 }
             }
             SlaveVideoMsg::ConfigUpdated(config) => {
@@ -169,40 +193,65 @@ impl MicroModel for SlaveVideoModel {
             }
             SlaveVideoMsg::StartPipeline => {
                 assert!(self.pipeline == None);
+                // 断言 self.pipeline 为 None
+
                 let config = self.get_config().lock().unwrap();
+                // 获取配置并进行锁定
+
                 let video_url = config.get_video_url();
+                // 获取视频 URL
+
                 match super::video::create_pipeline(video_url) {
+                    // 创建 pipeline
                     Ok(pipeline) => {
                         drop(config);
+                        // 释放配置的锁
+
                         let sender = sender.clone();
+                        // 克隆发送者
                         let (mat_sender, mat_receiver) =
                             MainContext::channel(glib::PRIORITY_DEFAULT);
+                        // 创建道，用于传输图像数据
+
                         super::video::attach_pipeline_callback(
                             &pipeline,
                             mat_sender,
                             self.get_config().clone(),
                         )
                         .unwrap();
+                        // 将回调函数附到 pipeline 上，并递相关参数
+
                         mat_receiver.attach(None, move |mat| {
+                            // 监听图像数据接收器，并对每个接收到的图像执行以下操作
                             sender
                                 .send(SlaveVideoMsg::SetPixbuf(Some(mat.as_pixbuf())))
                                 .unwrap();
+                            // 发送 SlaveVideo::SetPixbuf 消息，将图数据作为 Pixbuf 发送发送者
                             Continue(true)
+                            // 继续监听
                         });
+
                         match pipeline.set_state(gst::State::Playing) {
+                            // 设置 pipeline 的状态为 Playing
                             Ok(_) => {
                                 self.set_pipeline(Some(pipeline));
+                                // 设置 self.pipeline 为 Some(pipeline)
                                 send!(parent_sender, SlaveMsg::PollingChanged(true));
+                                // 向父发送者发送消息，表示轮询状态已更改为 true
                             }
                             Err(_) => {
-                                send!(parent_sender, SlaveMsg::ErrorMessage(String::from("无法启动管道，这可能是由于管道使用的资源不存在或被占用导致的，请检查相关资源是否可用。")));
+                                send!(parent_sender, SlaveMsg::ErrorMessage(String::from("无法启管道，这可能是由于管道使用的资源不存在或占用导致的，请检查相关资源是否用。")));
+                                // 向发送者发送错误消息，表示无法启动管道
                                 send!(parent_sender, SlaveMsg::PollingChanged(false));
+                                // 向父发送者发送消息，表示轮询状态已更为 false
                             }
                         }
                     }
                     Err(msg) => {
                         send!(parent_sender, SlaveMsg::ErrorMessage(String::from(msg)));
+                        // 向父发送者发送错误消息，表示创建管道失败
                         send!(parent_sender, SlaveMsg::PollingChanged(false));
+                        // 向父发送发送消息，表示轮询状态已更改为 false
                     }
                 }
             }
@@ -272,7 +321,7 @@ impl MicroModel for SlaveVideoModel {
             SlaveVideoMsg::SaveScreenshot(pathbuf) => {
                 assert!(self.pixbuf != None);
                 if let Some(pixbuf) = &self.pixbuf {
-                    match pixbuf.savev(&pathbuf,"jpeg", &[]) {
+                    match pixbuf.savev(&pathbuf, "jpeg", &[]) {
                         Ok(_) => send!(
                             parent_sender,
                             SlaveMsg::ShowToastMessage(format!(

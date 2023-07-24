@@ -33,33 +33,46 @@ where
     F: 'static + Fn(Option<PathBuf>) -> (),
 {
     relm4_macros::view! {
-        file_chooser = FileChooserNative {
-            set_action: action,
-            add_filter: iterate!(filters),
-            set_create_folders: true,
-            set_cancel_label: Some("取消"),
-            set_accept_label: Some("打开"),
-            set_modal: true,
-            set_transient_for: Some(parent_window),
-            connect_response => move |dialog, res_ty| {
-                match res_ty {
-                    gtk::ResponseType::Accept => {
-                        if let Some(file) = dialog.file() {
-                            if let Some(path) = file.path() {
-                                callback(Some(path));
-                                return;
-                            }
-                        }
-                    },
-                    gtk::ResponseType::Cancel => {
-                        callback(None);
-                    },
-                    _ => (),
-                }
-            },
-        }
+           // 创建一个本地文件选择器
+           file_chooser = FileChooserNative {
+               // 设置文件选择器的动作类型
+               set_action: action,
+               // 添加过滤器到文件选择器
+               add_filter: iterate!(filters),
+               // 设置是否允许创建文件夹
+               set_create_folders: true,
+               // 设置取消按钮的标签为"取消"
+               set_cancel_label: Some("取消"),
+               // 设置受按钮的标签为"打开"
+               set_accept_label: Some("打开"),
+               // 设置文件选择器为模态对话框
+               set_modal: true,
+               // 设置文件选择器的父窗
+               set_transient_for: Some(parent_window),
+               // 连接响应信号，当用户点击按钮时触发回调函数
+               connect_response => move |dialog, res_ty| {
+                   match res_ty {
+                       gtk::ResponseType::Accept => {
+                           if let Some(file) = dialog.file() {
+                               if let Some(path) = file.path() {
+                                   // 调用回调函数并递选中的路径
+                                   callback(Some(path));
+                                   return;
+                               }
+                           }
+                       },
+                       gtk::ResponseType::Cancel => {
+                           // 调用回调函数并传递空路径
+                           callback(None);
+                       },
+                       _ => (),
+                   }
+               },
+           }
     }
+    // 显示文件选择器
     file_chooser.show();
+    // 返回文件选择器实例
     file_chooser
 }
 
@@ -68,18 +81,28 @@ where
     T: IsA<gtk::Window>,
 {
     relm4_macros::view! {
+        // 创建一个消息对话框
         dialog = MessageDialog {
+            // 设置消息类型为错误
             set_message_type: gtk::MessageType::Error,
+            // 设置消息文本
             set_text: Some(msg),
+            // 设置对话框标题
             set_title: Some(title),
+            // 设置对话框为模对话框
             set_modal: true,
+            // 设置对话框的父窗口
             set_transient_for: window,
+            // 添加一个按钮到对话框，按钮文本为"确定"，响应类型为Ok
             add_button: args!("确定", ResponseType::Ok),
+            // 连接响应信号，当用户点击按钮时销毁对话框
             connect_response => |dialog, _response| {
                 dialog.destroy();
             }
         }
     }
+    // 显示对话框
     dialog.show();
+    // 返回对话框实例
     dialog
 }

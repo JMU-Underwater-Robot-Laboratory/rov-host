@@ -119,54 +119,67 @@ impl MicroModel for SlaveFirmwareUpdaterModel {
         self.reset();
         match msg {
             SlaveFirmwareUpdaterMsg::NextStep => {
-                self.set_current_page(self.get_current_page().wrapping_add(1))
+                // 当接收到下一步消息时
+                self.set_current_page(self.get_current_page().wrapping_add(1)); // 将当前页面设置为当前页面加1
             }
             SlaveFirmwareUpdaterMsg::FirmwareFileSelected(path) => {
-                self.set_firmware_file_path(Some(path))
+                // 当接到固件文件选择消息时
+                self.set_firmware_file_path(Some(path)); // 设置固件文件路径为给定路径
             }
             SlaveFirmwareUpdaterMsg::FirmwareUploadProgressUpdated(progress) => {
-                self.set_firmware_uploading_progress(progress);
+                // 当接收到固件上传进度更新消息时
+                self.set_firmware_uploading_progress(progress); // 设置固件上传进度为给定进度
                 if progress >= 1.0 || progress < 0.0 {
-                    send!(sender, SlaveFirmwareUpdaterMsg::NextStep);
+                    send!(sender, SlaveFirmwareUpdaterMsg::NextStep); // 如果进度大于等于1.0或小于0.0，则发送下一步消息
                 }
             }
             SlaveFirmwareUpdaterMsg::StartUpload => {
                 if let Some(path) = self.get_firmware_file_path() {
+                    // 如果存在固件文件路径
                     const CHUNK_SIZE: usize = 1024;
                     send!(sender, SlaveFirmwareUpdaterMsg::NextStep);
+                    // 发送下一步消息给发送者
                     let rpc_client = self.get_rpc_client().clone();
+                    // 克隆客户端
                     let handle = task::spawn(clone!(@strong sender, @strong path => async move {
                         match async_std::fs::File::open(path).await {
                             Ok(mut file) => {
                                 let mut bytes = Vec::new();
                                 file.read_to_end(&mut bytes).await.map_err(SlaveFirmwareUpdateError::IOError)?;
+                                // 读取文件内容到字节数组
                                 let len_total = bytes.len();
                                 let mut len_remain = len_total;
                                 for chunk in bytes.chunks(CHUNK_SIZE) {
                                     let chunk_encoded = base64::encode(chunk);
+                                    // 将块编码为Base64格式
                                     match rpc_client.request::<usize>(METHOD_UPDATE_FIRMWARE, Some((chunk_encoded, len_remain).to_rpc_params())).await {
                                         Ok(len_received) => {
                                             if len_received == chunk.len() {
                                                 len_remain -= len_received;
                                                 send!(sender, SlaveFirmwareUpdaterMsg::FirmwareUploadProgressUpdated((len_total - len_remain) as f32 / len_total as f32))
+                                                // 更新固件上传进度
                                             } else {
                                                 return Err(SlaveFirmwareUpdateError::VerificationError(chunk.len(), len_received));
+                                                // 返回验证错误
                                             }
                                         },
                                         Err(err) => {
                                             return Err(SlaveFirmwareUpdateError::RpcError(err));
+                                            // 返回RPC错误
                                         },
                                     }
                                 }
                                 Ok(())
                             },
                             Err(err) => Err(SlaveFirmwareUpdateError::IOError(err)),
+                            // 返回IO错误
                         }
                     }));
                     let handle = task::spawn(async move {
                         let result = handle.await;
                         if let Err(err) = result {
                             send!(sender, SlaveFirmwareUpdaterMsg::FirmwareUploadFailed(err));
+                            // 发送固件上传失败消息给发送者
                         }
                         Ok(())
                     });
@@ -174,10 +187,14 @@ impl MicroModel for SlaveFirmwareUpdaterModel {
                         parent_sender,
                         SlaveMsg::CommunicationMessage(SlaveCommunicationMsg::Block(handle))
                     );
+                    // 发送阻塞消息给父发送
                 }
             }
             SlaveFirmwareUpdaterMsg::FirmwareUploadFailed(err) => {
+                // 当固件上传失败时，设置固件更新结果为错误（Err）
                 self.set_firmware_update_result(Err(err));
+
+                // 发送下一步消息给发送者
                 send!(sender, SlaveFirmwareUpdaterMsg::NextStep);
             }
         }

@@ -231,6 +231,8 @@ pub fn input_sources_list_box(
     sender: &Sender<SlaveMsg>,
 ) -> Widget {
     let sources = input_system.get_sources().unwrap();
+    // 获取输入系统的设备列表
+
     if sources.is_empty() {
         return Label::builder()
             .label("无可用设备")
@@ -241,29 +243,55 @@ pub fn input_sources_list_box(
             .build()
             .upcast();
     }
+    // 如果设备列表为空，则返回一个带有指定标签和边距的标签控件
+
     let list_box = ListBox::builder().build();
+    // 创建一个列表控件
+
     let mut radio_button_group: Option<CheckButton> = None;
+    // 创建一个可选的单选按钮
+
     for (source, name) in sources {
+        // 遍历设备列表中的每个设备及其名称
+
         let radio_button = CheckButton::builder().label(&name).build();
+        // 创建一个带有指定名称的单选按钮
+
         let sender = sender.clone();
+        // 克隆发送器
+
         radio_button.set_active(input_sources.contains(&source));
+        // 设置单选按钮的活动状态，如果输入源包含当前设备，则设置为活动状态
+
         radio_button.connect_toggled(move |button| {
+            // 监听单选按钮的切换事件
             if button.is_active() {
                 send!(sender, SlaveMsg::AddInputSource(source.clone()));
+                // 如果单选按钮被激活，则向发送器发送添加输入源的消息
             } else {
                 send!(sender, SlaveMsg::RemoveInputSource(source.clone()));
+                // 否，向发送器发送移除输入源的消息
             }
         });
+
         {
             let radio_button = radio_button.clone();
+            // 克隆单选按钮
+
             match &radio_button_group {
                 Some(button) => radio_button.set_group(Some(button)),
+                // 如果单选按钮组存在，则将当前单选按钮设置为同一组
                 None => radio_button_group = Some(radio_button),
+                // 否则，将当前单选按钮设置为的单选按钮组
             }
         }
+
         list_box.append(&radio_button);
+        // 将单选按钮添加到列表框中
     }
+
     list_box.upcast()
+    // 返回列表框控件
 }
 
 #[micro_widget(pub)]
@@ -604,21 +632,23 @@ async fn communication_main_loop(
     status_info_udpate_interval: u64,
 ) -> Result<(), RpcError> {
     fn current_millis() -> u128 {
+        // 获取当前时间距离UNIX纪元的持续时间，并转换为毫秒
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_millis()
     }
+
     send!(
         slave_sender,
         SlaveMsg::ConnectionChanged(Some(rpc_client.clone()))
-    );
+    ); // 发送连接状态改变消息
 
-    let idle = async_std::sync::Arc::new(async_std::sync::Mutex::new(true));
+    let idle = async_std::sync::Arc::new(async_std::sync::Mutex::new(true)); // 空闲状态标
     let last_action_timestamp =
-        async_std::sync::Arc::new(async_std::sync::Mutex::new(current_millis()));
+        async_std::sync::Arc::new(async_std::sync::Mutex::new(current_millis())); // 上次动作时间戳
     let control_packet =
-        async_std::sync::Arc::new(async_std::sync::Mutex::new(None as Option<ControlPacket>));
+        async_std::sync::Arc::new(async_std::sync::Mutex::new(None as Option<ControlPacket>)); // 控制数据包
 
     let receive_task = task::spawn(
         clone!(@strong communication_sender, @strong idle, @strong slave_sender, @strong rpc_client => async move {
@@ -627,18 +657,20 @@ async fn communication_main_loop(
                     return;
                 }
                 if *idle.lock().await {
+                    // 请求获取信息
                     match rpc_client.request::<HashMap<String, String>>(METHOD_GET_INFO, None).await {
-                        Ok(info) => send!(slave_sender, SlaveMsg::InformationsReceived(info)),
+                        Ok(info) => send!(slave_sender, SlaveMsg::InformationsReceived(info)), // 发送接收到的信息消息
                         Err(error) => {
-                            communication_sender.send(SlaveCommunicationMsg::ConnectionLost(error)).await.unwrap_or_default();
+                            communication_sender.send(SlaveCommunicationMsg::ConnectionLost(error)).await.unwrap_or_default(); // 发送连接丢失消息
                             break;
                         },
                     }
                 }
-                task::sleep(Duration::from_millis(status_info_udpate_interval)).await;
+                task::sleep(Duration::from_millis(status_info_udpate_interval)).await; // 休眠一段时间后再继续循环
             }
         }),
-    ); // 定时请求数据
+    ); // 接收任务
+
     let control_send_task = task::spawn(
         clone!(@strong idle, @strong communication_sender, @strong rpc_client, @strong control_packet => async move {
             loop {
@@ -648,54 +680,68 @@ async fn communication_main_loop(
                 if *idle.lock().await {
                     let mut control_mutex = control_packet.lock().await;
                     if let Some(control) = control_mutex.as_ref() {
-                        for (method, params) in vec![(METHOD_MOVE, Some(control.motion.to_rpc_params())),
-                                                     (METHOD_SET_DEPTH_LOCKED, Some(control.depth_locked.to_rpc_params())),
-                                                     (METHOD_SET_DIRECTION_LOCKED, Some(control.direction_locked.to_rpc_params())),
-                                                     (METHOD_CATCH, Some(control.catch.to_rpc_params())),
-                                                     (METHOD_LIGHT, Some(control.light.to_rpc_params())),
+                        // 发送控制命令
+                        for (method, params) in vec![
+                            (METHOD_MOVE, Some(control.motion.to_rpc_params())),
+                            (METHOD_SET_DEPTH_LOCKED, Some(control.depth_locked.to_rpc_params())),
+                            (METHOD_SET_DIRECTION_LOCKED, Some(control.direction_locked.to_rpc_params())),
+                            (METHOD_CATCH, Some(control.catch.to_rpc_params())),
+                            (METHOD_LIGHT, Some(control.light.to_rpc_params())),
                         ].into_iter() {
                             match rpc_client.request::<()>(method, params).await {
                                 Ok(_) => *control_mutex = None,
                                 Err(err) => {
-                                    communication_sender.send(SlaveCommunicationMsg::ConnectionLost(err)).await.unwrap_or_default();
+                                    communication_sender.send(SlaveCommunicationMsg::ConnectionLost(err)).await.unwrap_or_default(); // 发送连接丢失消息
                                 }
                             }
                         }
-
                     }
                 }
-                task::sleep(Duration::from_millis(1000 / input_rate as u64)).await;
+                task::sleep(Duration::from_millis(1000 / input_rate as u64)).await; // 休眠一段时间后再续循环
             }
         }),
-    );
+    ); // 控制发送任务
 
     loop {
         match communication_receiver.recv().await {
             Ok(msg) if *idle.lock().await => match msg {
                 SlaveCommunicationMsg::Disconnect => {
+                    // 取消发送任务和接收任务
                     control_send_task.cancel().await;
                     receive_task.cancel().await;
+                    // 发送连接状态改变消息
                     send!(slave_sender, SlaveMsg::ConnectionChanged(None));
+                    // 关闭通接收器
                     communication_receiver.close();
+                    // 退出循环
                     break;
                 }
                 SlaveCommunicationMsg::ConnectionLost(err) => {
+                    // 取消发送任务和接收任务
                     control_send_task.cancel().await;
                     receive_task.cancel().await;
+                    // 发送通信错误消息
                     send!(slave_sender, SlaveMsg::CommunicationError(err.to_string()));
+                    // 关闭通信接收器
                     communication_receiver.close();
+                    // 返回错误
                     return Err(err);
                 }
                 SlaveCommunicationMsg::ControlUpdated(control) => {
+                    // 更新控制包
                     *control_packet.lock().await = Some(control);
+                    // 更新最后操作时间戳
                     *last_action_timestamp.lock().await = current_millis();
                 }
                 SlaveCommunicationMsg::Block(blocker) => {
+                    // 设置空闲状态为false
                     *idle.lock().await = false;
+                    // 启动异任务
                     task::spawn(clone!(@strong idle => async move {
                         if let Err(err) = blocker.await {
                             eprintln!("模块异常退出：{}", err);
                         }
+                        // 设置空闲状态true
                         *idle.lock().await = true;
                     }));
                 }
@@ -775,7 +821,7 @@ impl MicroModel for SlaveModel {
                         } else {
                             error_message(
                                 "错误",
-                                "连接 URL 有误，请检查并修改后重试 。",
+                                "连接 URL 有误，请检查并修改后重试。",
                                 app_window.upgrade().as_ref(),
                             );
                         }
@@ -785,16 +831,31 @@ impl MicroModel for SlaveModel {
             }
             SlaveMsg::TogglePolling => match self.get_polling() {
                 Some(true) => {
+                    // 如果值为 true
+                    // 发送停止视频流水线消息给 self.video，并确保发送成功
                     self.video.send(SlaveVideoMsg::StopPipeline).unwrap();
+
+                    // 设置轮为 None
                     self.set_polling(None);
+
+                    // 发送设置轮询为 None 的消息给 self.config，并确保发送成功
                     self.config.send(SlaveConfigMsg::SetPolling(None)).unwrap();
                 }
+
                 Some(false) => {
+                    // 如果值为 false
+                    // 发送启动视频流水线消息给 self.video，并保发送成功
                     self.video.send(SlaveVideoMsg::StartPipeline).unwrap();
+
+                    // 设置轮询为 None
                     self.set_polling(None);
+
+                    // 发送设置轮询为 None 的消息给 self.config，并确保发送成功
                     self.config.send(SlaveConfigMsg::SetPolling(None)).unwrap();
                 }
+
                 None => (),
+                // 如果值为 None，则不执行任何操作
             },
             SlaveMsg::AddInputSource(source) => {
                 self.get_mut_input_sources().insert(source);
@@ -814,10 +875,12 @@ impl MicroModel for SlaveModel {
                         match SlaveStatusClass::from_button(button) {
                             Some(status_class @ SlaveStatusClass::RoboticArmOpen)
                             | Some(status_class @ SlaveStatusClass::LightOpen) => {
+                                // 如果按钮被按下，设置目标状态为1，否则为0
                                 self.set_target_status(&status_class, if pressed { 1 } else { 0 });
                             }
                             Some(status_class) => {
                                 if pressed {
+                                    // 如果按钮被按下，根据当前标状态的值设置相反的状态
                                     self.set_target_status(
                                         &status_class,
                                         !(self.get_target_status(&status_class) != 0) as i16,
@@ -831,10 +894,17 @@ impl MicroModel for SlaveModel {
                         match SlaveStatusClass::from_axis(axis) {
                             Some(status_class @ SlaveStatusClass::RoboticArmClose)
                             | Some(status_class @ SlaveStatusClass::LightClose) => match value {
-                                1..=i16::MAX => self.set_target_status(&status_class, 1),
-                                i16::MIN..=0 => self.set_target_status(&status_class, 0),
+                                1..=i16::MAX => {
+                                    // 如果的值在1到最大值之，设置目标状态为1
+                                    self.set_target_status(&status_class, 1);
+                                }
+                                i16::MIN..=0 => {
+                                    // 如果轴的值在最小值到0之间，设置目标状态为0
+                                    self.set_target_status(&status_class, 0);
+                                }
                             },
                             Some(status_class) => {
+                                // 根据轴值和方向设置标状态
                                 self.set_target_status(
                                     &status_class,
                                     value.saturating_mul(
@@ -850,12 +920,15 @@ impl MicroModel for SlaveModel {
                         }
                     }
                 }
+
+                // 如果存在通信消息发送器
                 if let Some(sender) = self.get_communication_msg_sender() {
+                    // 根据当前状态映射创建制数据包
                     let control_packet =
                         ControlPacket::from_status_map(&self.get_status().lock().unwrap());
                     match sender.try_send(SlaveCommunicationMsg::ControlUpdated(control_packet)) {
                         Ok(_) => (),
-                        Err(err) => println!("无法发送控制输入：{}", err.to_string()),
+                        Err(err) => println!("无法发送制输入：{}", err.to_string()),
                     }
                 }
             }
