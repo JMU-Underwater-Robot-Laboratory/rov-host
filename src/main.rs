@@ -24,12 +24,12 @@ pub mod prelude;
 pub mod slave;
 pub mod ui;
 
-use std::{cell::RefCell, fs, net::Ipv4Addr, ops::Deref, rc::Rc, str::FromStr};
+use std::{cell::RefCell, net::Ipv4Addr, rc::Rc, str::FromStr};
 
-use adw::{prelude::*, ApplicationWindow, CenteringPolicy, ColorScheme, HeaderBar, StyleManager};
-use glib::{clone, DateTime, MainContext, Sender, WeakRef, PRIORITY_DEFAULT};
+use adw::{prelude::*, ApplicationWindow, CenteringPolicy, HeaderBar};
+use glib::{clone, MainContext, Sender, WeakRef, PRIORITY_DEFAULT};
 use gtk::{
-    AboutDialog, Align, Box as GtkBox, Button, Grid, Inhibit, License, MenuButton, Orientation,
+    AboutDialog, Align, Box as GtkBox, Grid, Inhibit, License, MenuButton, Orientation,
     ToggleButton,
 };
 use relm4::{
@@ -45,11 +45,10 @@ use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
 use crate::input::{InputEvent, InputSystem};
-use crate::preferences::{PreferencesModel, PreferencesMsg};
+use crate::preferences::PreferencesModel;
 use crate::slave::{
-    slave_config::SlaveConfigModel, slave_video::SlaveVideoMsg, MyComponent, SlaveModel, SlaveMsg,
+    slave_config::SlaveConfigModel, MyComponent, SlaveModel, SlaveMsg,
 };
-use crate::ui::generic::error_message;
 
 struct AboutModel {}
 enum AboutMsg {}
@@ -155,14 +154,6 @@ impl Widgets<AppModel, ()> for AppWidgets {
                 set_orientation: Orientation::Vertical,
                 append = &HeaderBar {
                     set_centering_policy: CenteringPolicy::Strict,
-                    pack_start = &Button {
-                        set_halign: Align::Center,
-                        set_css_classes?: watch!(model.sync_recording.map(|x| if x { &["destructive-action"] as &[&str] } else { &[] as &[&str] })),
-                        set_visible: track!(model.changed(AppModel::slaves()), model.slaves.len() > 1),
-                        connect_clicked[sender = sender.clone(), window = app_window.clone().downgrade()] => move |__button| {
-                            send!(sender, AppMsg::ToggleSyncRecording(window.clone()));
-                        }
-                    },
                     pack_end = &MenuButton {
                         set_menu_model: Some(&main_menu),
                         set_icon_name: "open-menu-symbolic",
@@ -199,10 +190,7 @@ impl Widgets<AppModel, ()> for AppWidgets {
     }
 
     fn post_init() {
-        send!(
-            components.preferences.sender(),
-            PreferencesMsg::SetApplicationColorScheme(None)
-        );
+
         let app_group = RelmActionGroup::<AppActionGroup>::new();
 
         let action_preferences: RelmAction<PreferencesAction> =
@@ -217,10 +205,7 @@ impl Widgets<AppModel, ()> for AppWidgets {
         app_group.add_action(action_preferences);
         app_group.add_action(action_about);
         app_window.insert_action_group("main", Some(&app_group.into_action_group()));
-        for _ in 0..*model.get_preferences().borrow().get_initial_slave_num() {
-            send!(sender, AppMsg::NewSlave(app_window.clone().downgrade()));
-        }
-
+        send!(sender, AppMsg::NewSlave(app_window.clone().downgrade()));
         let (input_event_sender, input_event_receiver) = MainContext::channel(PRIORITY_DEFAULT);
         *model.input_system.event_sender.borrow_mut() = Some(input_event_sender);
 
@@ -236,12 +221,8 @@ impl Widgets<AppModel, ()> for AppWidgets {
 
 pub enum AppMsg {
     NewSlave(WeakRef<ApplicationWindow>),
-    RemoveLastSlave,
-    DestroySlave(*const SlaveModel),
     DispatchInputEvent(InputEvent),
     PreferencesUpdated(PreferencesModel),
-    SetColorScheme(AppColorScheme),
-    ToggleSyncRecording(WeakRef<ApplicationWindow>),
     SetFullscreened(bool),
     OpenAboutDialog,
     OpenPreferencesWindow,
@@ -341,90 +322,10 @@ impl AppUpdate for AppModel {
                     }
                 }
             }
-            AppMsg::ToggleSyncRecording(window) => {
-                match *self.get_sync_recording() {
-                    Some(recording) => {
-                        if !recording {
-                            if self.slaves.iter().all(|x| {
-                                *x.model().unwrap().get_polling() == Some(true)
-                                    && *x.model().unwrap().get_recording() == Some(false)
-                            }) {
-                                let timestamp = DateTime::now_local()
-                                    .unwrap()
-                                    .format_iso8601()
-                                    .unwrap()
-                                    .replace(":", "-");
-                                for (index, component) in self.slaves.iter().enumerate() {
-                                    let model = component.model().unwrap();
-                                    let preferences = self.preferences.borrow();
-                                    let mut pathbuf = preferences.get_video_save_path().clone();
-                                    if *preferences.get_video_sync_record_use_separate_directory() {
-                                        pathbuf.push(&timestamp);
-                                        fs::create_dir_all(&pathbuf).unwrap();
-                                        pathbuf.push(format!("{}.mkv", index + 1));
-                                    } else {
-                                        pathbuf.push(format!("{}_{}.mkv", &timestamp, index + 1));
-                                    }
-                                    model
-                                        .get_video()
-                                        .send(SlaveVideoMsg::StartRecord(pathbuf))
-                                        .unwrap();
-                                }
-                                self.set_sync_recording(Some(true));
-                            } else {
-                                error_message("错误", "无法进行同步录制，请确保所有机位均已启动拉流并未处于录制状态。", window.upgrade().as_ref()).present();
-                            }
-                        } else {
-                            for (_index, component) in self.get_slaves().iter().enumerate() {
-                                let model = component.model().unwrap();
-                                model
-                                    .get_video()
-                                    .send(SlaveVideoMsg::StopRecord(None))
-                                    .unwrap();
-                            }
-                            self.set_sync_recording(Some(false));
-                        }
-                    }
-                    None => (),
-                }
-            }
             AppMsg::StopInputSystem => {
                 self.input_system.stop();
             }
-            AppMsg::DestroySlave(slave_ptr) => {
-                if slave_ptr == std::ptr::null() {
-                    self.get_mut_slaves().pop();
-                } else {
-                    let slave_index = self
-                        .get_slaves()
-                        .iter()
-                        .enumerate()
-                        .find_map(move |(index, component)| {
-                            if Deref::deref(&component.model().unwrap()) as *const SlaveModel
-                                == slave_ptr
-                            {
-                                Some(index)
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap();
-                    if slave_index == self.get_slaves().len() - 1 {
-                        self.get_mut_slaves().pop();
-                    }
-                }
-            }
             AppMsg::SetFullscreened(fullscreened) => self.set_fullscreened(fullscreened),
-            AppMsg::RemoveLastSlave => {
-                if let Some(slave) = self.get_slaves().iter().last() {
-                    send!(slave.sender(), SlaveMsg::DestroySlave);
-                }
-            }
-            AppMsg::SetColorScheme(scheme) => {
-                StyleManager::default().set_color_scheme(match scheme {
-                    AppColorScheme::Light => ColorScheme::ForceLight,
-                })
-            }
         }
         true
     }

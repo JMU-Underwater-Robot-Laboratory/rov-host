@@ -21,13 +21,13 @@ use std::{
     fmt::Debug,
     path::PathBuf,
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex}, time::Duration,
 };
 
 use adw::StatusPage;
 use gdk_pixbuf::Pixbuf;
 use glib::{clone, MainContext, Sender};
-use gst::{prelude::*, Pipeline};
+use gst::{prelude::*, Element, Pipeline};
 use gtk::{prelude::*, Box as GtkBox, Picture, Stack};
 use relm4::{send, MicroModel, MicroWidgets};
 use relm4_macros::micro_widget;
@@ -38,7 +38,7 @@ use super::{slave_config::SlaveConfigModel, SlaveMsg};
 use crate::{
     async_glib::{Future, Promise},
     preferences::PreferencesModel,
-    slave::video::{ImageFormat, MatExt, VideoSource},
+    slave::video:: MatExt,
 };
 
 #[tracker::track]
@@ -108,43 +108,34 @@ impl MicroModel for SlaveVideoModel {
             }
             SlaveVideoMsg::StartRecord(pathbuf) => {
                 if let Some(pipeline) = &self.pipeline {
-                    let config = self.config.lock().unwrap();
-                    let encoder = if *config.get_reencode_recording_video() {
-                        Some(config.get_video_encoder())
-                    } else {
-                        None
-                    };
-                    let colorspace_conversion = config.get_colorspace_conversion().clone();
-                    let record_handle = match encoder {
-                        Some(encoder) => {
-                            let elements = encoder.gst_record_elements(
-                                colorspace_conversion,
-                                &pathbuf.to_str().unwrap(),
-                            );
-                            let elements_and_pad = elements.and_then(|elements| {
-                                super::video::connect_elements_to_pipeline(
-                                    pipeline,
-                                    "tee_decoded",
-                                    &elements,
-                                )
-                                .map(|pad| (elements, pad))
-                            });
-                            elements_and_pad
-                        }
-                        None => {
-                            let elements = config
-                                .video_decoder
-                                .gst_record_elements(&pathbuf.to_str().unwrap());
-                            let elements_and_pad = elements.and_then(|elements| {
-                                super::video::connect_elements_to_pipeline(
-                                    pipeline,
-                                    "tee_source",
-                                    &elements,
-                                )
-                                .map(|pad| (elements, pad))
-                            });
-                            elements_and_pad
-                        }
+                    pub fn gst_record_elements(filename: &str) -> Result<Vec<Element>, String> {
+                        let mut elements = Vec::new();
+                        let queue_to_file = gst::ElementFactory::make("queue", None)
+                            .map_err(|_| "Missing element: queue")?;
+                        elements.push(queue_to_file);
+                        let parse = gst::ElementFactory::make("h265parse", None)
+                            .map_err(|_| "Missing element: h265parse")?;
+                        elements.push(parse);
+                        let matroskamux = gst::ElementFactory::make("matroskamux", None)
+                            .map_err(|_| "Missing muxer: matroskamux")?;
+                        elements.push(matroskamux);
+                        let filesink = gst::ElementFactory::make("filesink", None)
+                            .map_err(|_| "Missing element: filesink")?;
+                        filesink.set_property("location", filename);
+                        elements.push(filesink);
+                        Ok(elements)
+                    }
+                    let record_handle = {
+                        let elements = gst_record_elements(&pathbuf.to_str().unwrap());
+                        let elements_and_pad = elements.and_then(|elements| {
+                            super::video::connect_elements_to_pipeline(
+                                pipeline,
+                                "tee_source",
+                                &elements,
+                            )
+                            .map(|pad| (elements, pad))
+                        });
+                        elements_and_pad
                     };
                     match record_handle {
                         Ok((elements, pad)) => {
@@ -180,63 +171,39 @@ impl MicroModel for SlaveVideoModel {
                 assert!(self.pipeline == None);
                 let config = self.get_config().lock().unwrap();
                 let video_url = config.get_video_url();
-                if let Some(video_source) = VideoSource::from_url(video_url) {
-                    let video_decoder = config.get_video_decoder().clone();
-                    let colorspace_conversion = config.get_colorspace_conversion().clone();
-                    let use_decodebin = config.get_use_decodebin().clone();
-                    let appsink_leaky_enabled = config.get_appsink_queue_leaky_enabled().clone();
-                    let latency = config.get_video_latency().clone();
-                    drop(config); // 结束 &self 的生命周期
-
-                    match if use_decodebin {
-                        super::video::create_decodebin_pipeline(video_source, appsink_leaky_enabled)
-                    } else {
-                        super::video::create_pipeline(
-                            video_source,
-                            latency,
-                            colorspace_conversion,
-                            video_decoder,
-                            appsink_leaky_enabled,
+                match super::video::create_pipeline(video_url) {
+                    Ok(pipeline) => {
+                        drop(config);
+                        let sender = sender.clone();
+                        let (mat_sender, mat_receiver) =
+                            MainContext::channel(glib::PRIORITY_DEFAULT);
+                        super::video::attach_pipeline_callback(
+                            &pipeline,
+                            mat_sender,
+                            self.get_config().clone(),
                         )
-                    } {
-                        Ok(pipeline) => {
-                            let sender = sender.clone();
-                            let (mat_sender, mat_receiver) =
-                                MainContext::channel(glib::PRIORITY_DEFAULT);
-                            super::video::attach_pipeline_callback(
-                                &pipeline,
-                                mat_sender,
-                                self.get_config().clone(),
-                            )
-                            .unwrap();
-                            mat_receiver.attach(None, move |mat| {
-                                sender
-                                    .send(SlaveVideoMsg::SetPixbuf(Some(mat.as_pixbuf())))
-                                    .unwrap();
-                                Continue(true)
-                            });
-                            match pipeline.set_state(gst::State::Playing) {
-                                Ok(_) => {
-                                    self.set_pipeline(Some(pipeline));
-                                    send!(parent_sender, SlaveMsg::PollingChanged(true));
-                                }
-                                Err(_) => {
-                                    send!(parent_sender, SlaveMsg::ErrorMessage(String::from("无法启动管道，这可能是由于管道使用的资源不存在或被占用导致的，请检查相关资源是否可用。")));
-                                    send!(parent_sender, SlaveMsg::PollingChanged(false));
-                                }
+                        .unwrap();
+                        mat_receiver.attach(None, move |mat| {
+                            sender
+                                .send(SlaveVideoMsg::SetPixbuf(Some(mat.as_pixbuf())))
+                                .unwrap();
+                            Continue(true)
+                        });
+                        match pipeline.set_state(gst::State::Playing) {
+                            Ok(_) => {
+                                self.set_pipeline(Some(pipeline));
+                                send!(parent_sender, SlaveMsg::PollingChanged(true));
+                            }
+                            Err(_) => {
+                                send!(parent_sender, SlaveMsg::ErrorMessage(String::from("无法启动管道，这可能是由于管道使用的资源不存在或被占用导致的，请检查相关资源是否可用。")));
+                                send!(parent_sender, SlaveMsg::PollingChanged(false));
                             }
                         }
-                        Err(msg) => {
-                            send!(parent_sender, SlaveMsg::ErrorMessage(String::from(msg)));
-                            send!(parent_sender, SlaveMsg::PollingChanged(false));
-                        }
                     }
-                } else {
-                    send!(
-                        parent_sender,
-                        SlaveMsg::ErrorMessage(String::from("拉流 URL 有误，请检查并修改后重试。"))
-                    );
-                    send!(parent_sender, SlaveMsg::PollingChanged(false));
+                    Err(msg) => {
+                        send!(parent_sender, SlaveMsg::ErrorMessage(String::from(msg)));
+                        send!(parent_sender, SlaveMsg::PollingChanged(false));
+                    }
                 }
             }
             SlaveVideoMsg::StopPipeline => {
@@ -285,7 +252,7 @@ impl MicroModel for SlaveVideoModel {
                             }),
                         );
                         glib::timeout_add_local_once(
-                            self.preferences.borrow().get_pipeline_timeout().clone(),
+                            Duration::from_secs(10),
                             clone!(@weak pipeline, @strong parent_sender => move || {
                                 send!(parent_sender, SlaveMsg::PollingChanged(false));
                                 if recording {
@@ -305,13 +272,7 @@ impl MicroModel for SlaveVideoModel {
             SlaveVideoMsg::SaveScreenshot(pathbuf) => {
                 assert!(self.pixbuf != None);
                 if let Some(pixbuf) = &self.pixbuf {
-                    let format = pathbuf
-                        .extension()
-                        .unwrap()
-                        .to_str()
-                        .and_then(ImageFormat::from_extension)
-                        .unwrap();
-                    match pixbuf.savev(&pathbuf, &format.to_string().to_lowercase(), &[]) {
+                    match pixbuf.savev(&pathbuf,"jpeg", &[]) {
                         Ok(_) => send!(
                             parent_sender,
                             SlaveMsg::ShowToastMessage(format!(

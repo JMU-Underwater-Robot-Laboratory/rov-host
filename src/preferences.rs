@@ -16,28 +16,24 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-use std::{fs, path::PathBuf, str::FromStr, time::Duration};
+use std::{fs, path::PathBuf, str::FromStr};
 
 use adw::{
-    prelude::*, ActionRow, ComboRow, ExpanderRow, PreferencesGroup, PreferencesPage,
+    prelude::*, ActionRow, PreferencesGroup, PreferencesPage,
     PreferencesWindow,
 };
 use glib::Sender;
-use gtk::{Align, Entry, Inhibit, Label, SpinButton, StringList, Switch};
+use gtk::{Align, Entry, Inhibit, Switch};
 use relm4::{send, ComponentUpdate, Model, Widgets};
 use relm4_macros::widget;
 
 use derivative::*;
 use serde::{Deserialize, Serialize};
-use strum::IntoEnumIterator;
+
 use url::Url;
 
 use crate::{
-    slave::video::{
-        ColorspaceConversion, ImageFormat, VideoCodec, VideoCodecProvider, VideoDecoder,
-        VideoEncoder,
-    },
-    AppColorScheme, AppModel, AppMsg,
+     AppModel, AppMsg,
 };
 
 pub fn get_data_path() -> PathBuf {
@@ -78,45 +74,14 @@ pub fn get_image_path() -> PathBuf {
 #[derive(Derivative, Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[derivative(Default)]
 pub struct PreferencesModel {
-    #[derivative(Default(value = "1"))]
-    pub initial_slave_num: u8,
-    pub application_color_scheme: AppColorScheme,
-    #[derivative(Default(value = "get_video_path()"))]
-    pub video_save_path: PathBuf,
-    #[derivative(Default(value = "get_image_path()"))]
-    pub image_save_path: PathBuf,
-    #[derivative(Default(value = "ImageFormat::JPEG"))]
-    pub image_save_format: ImageFormat,
-    pub default_reencode_recording_video: bool,
-    pub default_video_encoder: VideoEncoder,
     #[derivative(Default(value = "Url::from_str(\"http://192.168.137.219:8888\").unwrap()"))]
     pub default_slave_url: Url,
     #[derivative(Default(
-        value = "Url::from_str(\"rtp://127.0.0.1:5600?encoding-name=H264\").unwrap()"
+        value = "Url::from_str(\"rtsp://rov:rov@192.168.137.123:554/\").unwrap()"
     ))]
     pub default_video_url: Url,
-    #[derivative(Default(value = "60"))]
-    pub default_input_sending_rate: u16,
     #[derivative(Default(value = "true"))]
     pub default_keep_video_display_ratio: bool,
-    pub default_video_decoder: VideoDecoder,
-    pub default_colorspace_conversion: ColorspaceConversion,
-    #[derivative(Default(value = "64"))]
-    pub param_tuner_graph_view_point_num_limit: u16,
-    #[derivative(Default(value = "250"))]
-    pub param_tuner_graph_view_update_interval: u16,
-    #[derivative(Default(value = "Duration::from_secs(10)"))]
-    pub pipeline_timeout: Duration,
-    #[derivative(Default(value = "false"))]
-    pub default_appsink_queue_leaky_enabled: bool,
-    #[derivative(Default(value = "false"))]
-    pub default_use_decodebin: bool,
-    #[derivative(Default(value = "false"))]
-    pub video_sync_record_use_separate_directory: bool,
-    #[derivative(Default(value = "200"))]
-    pub default_video_latency: u32,
-    #[derivative(Default(value = "500"))]
-    pub default_status_info_update_interval: u16,
 }
 
 impl PreferencesModel {
@@ -133,29 +98,9 @@ impl PreferencesModel {
 
 #[derive(Debug)]
 pub enum PreferencesMsg {
-    SetVideoSavePath(PathBuf),
-    SetImageSavePath(PathBuf),
-    SetImageSaveFormat(ImageFormat),
-    SetInitialSlaveNum(u8),
-    SetInputSendingRate(u16),
-    SetParamTunerGraphViewUpdateInterval(u16),
     SetDefaultKeepVideoDisplayRatio(bool),
-    SetDefaultVideoDecoderCodec(VideoCodec),
-    SetDefaultVideoDecoderCodecProvider(VideoCodecProvider),
-    SetDefaultVideoEncoderCodec(VideoCodec),
-    SetDefaultVideoEncoderCodecProvider(VideoCodecProvider),
-    SetParameterTunerGraphViewPointNumberLimit(u16),
-    SetDefaultColorspaceConversion(ColorspaceConversion),
-    SetDefaultReencodeRecordingVideo(bool),
-    SetDefaultUseDecodebin(bool),
-    SetDefaultAppSinkQueueLeakyEnabled(bool),
-    SetVideoSyncRecordUseSeparateDirectory(bool),
-    SetDefaultVideoLatency(u32),
     SetDefaultVideoUrl(Url),
     SetDefaultSlaveUrl(Url),
-    SetPipelineTimeout(Duration),
-    SetApplicationColorScheme(Option<AppColorScheme>),
-    SetDefaultStatusInfoUpdateInterval(u16),
     SaveToFile,
     OpenVideoDirectory,
     OpenImageDirectory,
@@ -252,25 +197,10 @@ impl Widgets<PreferencesModel, AppModel> for PreferencesWidgets {
                     set_description: Some("画面的截图选项"),
                     add = &ActionRow {
                         set_title: "图片保存目录",
-                        set_subtitle: track!(model.changed(PreferencesModel::image_save_path()), model.image_save_path.to_str().unwrap()),
+                        set_subtitle: crate::preferences::get_image_path().to_str().unwrap(),
                         set_activatable: true,
                         connect_activated(sender) => move |_row| {
                             send!(sender, PreferencesMsg::OpenImageDirectory);
-                        }
-                    },
-                    add = &ComboRow {
-                        set_title: "图片保存格式",
-                        set_subtitle: "截图保存的图片格式",
-                        set_model: Some(&{
-                            let model = StringList::new(&[]);
-                            for value in ImageFormat::iter() {
-                                model.append(&value.to_string());
-                            }
-                            model
-                        }),
-                        set_selected: track!(model.changed(PreferencesModel::image_save_format()), ImageFormat::iter().position(|x| x == model.image_save_format).unwrap() as u32),
-                        connect_selected_notify(sender) => move |row| {
-                            send!(sender, PreferencesMsg::SetImageSaveFormat(ImageFormat::iter().nth(row.selected() as usize).unwrap()))
                         }
                     },
                 },
@@ -279,87 +209,11 @@ impl Widgets<PreferencesModel, AppModel> for PreferencesWidgets {
                     set_description: Some("视频流的录制选项"),
                     add = &ActionRow {
                         set_title: "视频保存目录",
-                        set_subtitle: track!(model.changed(PreferencesModel::video_save_path()), model.video_save_path.to_str().unwrap()),
+                        set_subtitle: crate::preferences::get_video_path().to_str().unwrap(),
                         set_activatable: true,
                         connect_activated(sender) => move |_row| {
                             send!(sender, PreferencesMsg::OpenVideoDirectory);
                         }
-                    },
-                    add = &ExpanderRow {
-                        set_title: "默认录制时重新编码",
-                        set_show_enable_switch: true,
-                        set_expanded: *model.get_default_reencode_recording_video(),
-                        set_enable_expansion: track!(model.changed(PreferencesModel::default_reencode_recording_video()), *model.get_default_reencode_recording_video()),
-                        connect_enable_expansion_notify(sender) => move |expander| {
-                            send!(sender, PreferencesMsg::SetDefaultReencodeRecordingVideo(expander.enables_expansion()));
-                        },
-                        add_row = &ComboRow {
-                            set_title: "默认编码器",
-                            set_subtitle: "视频录制时默认使用的编码器",
-                            set_model: Some(&{
-                                let model = StringList::new(&[]);
-                                for value in VideoCodec::iter() {
-                                    model.append(&value.to_string());
-                                }
-                                model
-                            }),
-                            set_selected: track!(model.changed(PreferencesModel::default_video_encoder()), VideoCodec::iter().position(|x| x == model.default_video_encoder.0).unwrap() as u32),
-                            connect_selected_notify(sender) => move |row| {
-                                send!(sender, PreferencesMsg::SetDefaultVideoEncoderCodec(VideoCodec::iter().nth(row.selected() as usize).unwrap()))
-                            }
-                        },
-                        add_row = &ComboRow {
-                            set_title: "默认编码器接口",
-                            set_subtitle: "视频录制时默认调用的编码器接口",
-                            set_model: Some(&{
-                                let model = StringList::new(&[]);
-                                for value in VideoCodecProvider::iter() {
-                                    model.append(&value.to_string());
-                                }
-                                model
-                            }),
-                            set_selected: track!(model.changed(PreferencesModel::default_video_encoder()), VideoCodecProvider::iter().position(|x| x == model.default_video_encoder.1).unwrap() as u32),
-                            connect_selected_notify(sender) => move |row| {
-                                send!(sender, PreferencesMsg::SetDefaultVideoEncoderCodecProvider(VideoCodecProvider::iter().nth(row.selected() as usize).unwrap()))
-                            }
-                        },
-                    },
-                },
-            },
-            add = &PreferencesPage {
-                set_title: "调试",
-                set_icon_name: Some("preferences-other-symbolic"),
-                add = &PreferencesGroup {
-                    set_title: "控制环",
-                    set_description: Some("配置控制环调试选项"),
-                    add = &ActionRow {
-                        set_title: "反馈曲线最大点数",
-                        set_subtitle: "绘制控制环反馈曲线时使用最多使用点数，这将影响最多能观测的历史数据",
-                        add_suffix = &SpinButton::with_range(1.0, 255.0, 1.0) {
-                            set_value: track!(model.changed(PreferencesModel::param_tuner_graph_view_point_num_limit()), model.param_tuner_graph_view_point_num_limit as f64),
-                            set_digits: 0,
-                            set_valign: Align::Center,
-                            set_can_focus: false,
-                            connect_value_changed(sender) => move |button| {
-                                send!(sender, PreferencesMsg::SetParameterTunerGraphViewPointNumberLimit(button.value() as u16));
-                            },
-                        },
-                    },
-                    add = &ActionRow {
-                        set_title: "反馈曲线更新时间间隔",
-                        set_subtitle: "控制环反馈曲线的更新速率，这将影响最多能观测的历史数据",
-                        add_suffix = &SpinButton::with_range(50.0, 10000.0, 50.0) {
-                            set_value: track!(model.changed(PreferencesModel::param_tuner_graph_view_update_interval()), model.param_tuner_graph_view_update_interval as f64),
-                            set_digits: 0,
-                            set_valign: Align::Center,
-                            set_can_focus: false,
-                            connect_value_changed(sender) => move |button| {
-                                send!(sender, PreferencesMsg::SetParamTunerGraphViewUpdateInterval(button.value() as u16));
-                            }
-                        },
-                        add_suffix = &Label {
-                            set_label: "毫秒",
-                        },
                     },
                 },
             },
@@ -383,9 +237,6 @@ impl ComponentUpdate<AppModel> for PreferencesModel {
     ) {
         self.reset();
         match msg {
-            PreferencesMsg::SetVideoSavePath(path) => self.set_video_save_path(path),
-            PreferencesMsg::SetInitialSlaveNum(num) => self.set_initial_slave_num(num),
-            PreferencesMsg::SetInputSendingRate(rate) => self.set_default_input_sending_rate(rate),
             PreferencesMsg::SetDefaultKeepVideoDisplayRatio(value) => {
                 self.set_default_keep_video_display_ratio(value)
             }
@@ -393,79 +244,23 @@ impl ComponentUpdate<AppModel> for PreferencesModel {
                 .ok()
                 .and_then(|json| fs::write(get_preference_path(), json).ok())
                 .unwrap(),
-            PreferencesMsg::SetImageSavePath(path) => self.set_image_save_path(path),
-            PreferencesMsg::SetImageSaveFormat(format) => self.set_image_save_format(format),
-            PreferencesMsg::SetParameterTunerGraphViewPointNumberLimit(limit) => {
-                self.set_param_tuner_graph_view_point_num_limit(limit)
-            }
             PreferencesMsg::OpenVideoDirectory => gtk::show_uri(
                 None as Option<&PreferencesWindow>,
-                glib::filename_to_uri(self.get_video_save_path().to_str().unwrap(), None)
+                glib::filename_to_uri(crate::preferences::get_video_path().to_str().unwrap(), None)
                     .unwrap()
                     .as_str(),
                 gdk::CURRENT_TIME,
             ),
             PreferencesMsg::OpenImageDirectory => gtk::show_uri(
                 None as Option<&PreferencesWindow>,
-                glib::filename_to_uri(self.get_image_save_path().to_str().unwrap(), None)
+                glib::filename_to_uri(crate::preferences::get_video_path().to_str().unwrap(), None)
                     .unwrap()
                     .as_str(),
                 gdk::CURRENT_TIME,
             ),
-            PreferencesMsg::SetDefaultColorspaceConversion(conversion) => {
-                self.set_default_colorspace_conversion(conversion)
-            }
             PreferencesMsg::SetDefaultVideoUrl(url) => self.default_video_url = url, // 防止输入框的光标移动至最前
             PreferencesMsg::SetDefaultSlaveUrl(url) => self.default_slave_url = url,
-            PreferencesMsg::SetDefaultVideoDecoderCodec(codec) => {
-                self.get_mut_default_video_decoder().0 = codec
-            }
-            PreferencesMsg::SetDefaultVideoDecoderCodecProvider(provider) => {
-                self.get_mut_default_video_decoder().1 = provider
-            }
-            PreferencesMsg::SetDefaultReencodeRecordingVideo(reencode) => {
-                if !reencode {
-                    self.set_default_use_decodebin(false);
-                }
-                self.set_default_reencode_recording_video(reencode)
-            }
-            PreferencesMsg::SetDefaultVideoEncoderCodec(codec) => {
-                self.get_mut_default_video_encoder().0 = codec
-            }
-            PreferencesMsg::SetDefaultVideoEncoderCodecProvider(provider) => {
-                self.get_mut_default_video_encoder().1 = provider
-            }
-            PreferencesMsg::SetPipelineTimeout(timeout) => self.set_pipeline_timeout(timeout),
-            PreferencesMsg::SetDefaultAppSinkQueueLeakyEnabled(leaky) => {
-                self.set_default_appsink_queue_leaky_enabled(leaky)
-            }
-            PreferencesMsg::SetDefaultUseDecodebin(use_decodebin) => {
-                if use_decodebin {
-                    self.set_default_reencode_recording_video(true);
-                }
-                self.set_default_use_decodebin(use_decodebin);
-            }
-            PreferencesMsg::SetVideoSyncRecordUseSeparateDirectory(use_separate_directory) => {
-                self.set_video_sync_record_use_separate_directory(use_separate_directory)
-            }
-            PreferencesMsg::SetDefaultVideoLatency(latency) => {
-                self.set_default_video_latency(latency)
-            }
-            PreferencesMsg::SetApplicationColorScheme(scheme) => {
-                if let Some(scheme) = scheme {
-                    self.set_application_color_scheme(scheme);
-                }
-                send!(
-                    parent_sender,
-                    AppMsg::SetColorScheme(*self.get_application_color_scheme())
-                );
-            }
-            PreferencesMsg::SetDefaultStatusInfoUpdateInterval(interval) => {
-                self.set_default_status_info_update_interval(interval)
-            }
-            PreferencesMsg::SetParamTunerGraphViewUpdateInterval(interval) => {
-                self.set_param_tuner_graph_view_update_interval(interval)
-            }
+
         }
         send!(parent_sender, AppMsg::PreferencesUpdated(self.clone()));
     }

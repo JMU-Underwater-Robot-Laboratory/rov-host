@@ -579,7 +579,6 @@ pub enum SlaveMsg {
     InputReceived(InputSourceEvent),
     OpenFirmwareUpater,
     OpenParameterTuner,
-    DestroySlave,
     ErrorMessage(String),
     CommunicationError(String),
     ConnectionChanged(Option<async_std::sync::Arc<RpcClient>>),
@@ -714,7 +713,7 @@ impl MicroModel for SlaveModel {
     fn update(
         &mut self,
         msg: SlaveMsg,
-        (parent_sender, app_window): &Self::Data,
+        (_parent_sender, app_window): &Self::Data,
         sender: Sender<SlaveMsg>,
     ) {
         self.reset();
@@ -748,16 +747,12 @@ impl MicroModel for SlaveModel {
                                     async_std::channel::bounded::<SlaveCommunicationMsg>(128);
                                 self.set_communication_msg_sender(Some(comm_sender.clone()));
                                 let sender = sender.clone();
-                                let control_sending_rate =
-                                    *self.preferences.borrow().get_default_input_sending_rate();
+                                let control_sending_rate = 60;
                                 self.set_connected(None);
                                 self.config
                                     .send(SlaveConfigMsg::SetConnected(None))
                                     .unwrap();
-                                let status_info_update_interval = *self
-                                    .preferences
-                                    .borrow()
-                                    .get_default_status_info_update_interval();
+                                let status_info_update_interval = 500;
                                 async_std::task::spawn(async move {
                                     communication_main_loop(
                                         control_sending_rate,
@@ -856,11 +851,8 @@ impl MicroModel for SlaveModel {
                     }
                 }
                 if let Some(sender) = self.get_communication_msg_sender() {
-                    let mut control_packet =
+                    let control_packet =
                         ControlPacket::from_status_map(&self.get_status().lock().unwrap());
-                    if *self.config.model().get_swap_xy() {
-                        std::mem::swap(&mut control_packet.motion.x, &mut control_packet.motion.y);
-                    }
                     match sender.try_send(SlaveCommunicationMsg::ControlUpdated(control_packet)) {
                         Ok(_) => (),
                         Err(err) => println!("无法发送控制输入：{}", err.to_string()),
@@ -887,19 +879,8 @@ impl MicroModel for SlaveModel {
             },
             SlaveMsg::OpenParameterTuner => match self.get_rpc_client() {
                 Some(rpc_client) => {
-                    let component = MicroComponent::new(
-                        SlaveParameterTunerModel::new(
-                            *self
-                                .preferences
-                                .borrow()
-                                .get_param_tuner_graph_view_point_num_limit(),
-                            *self
-                                .preferences
-                                .borrow()
-                                .get_param_tuner_graph_view_update_interval(),
-                        ),
-                        sender.clone(),
-                    );
+                    let component =
+                        MicroComponent::new(SlaveParameterTunerModel::new(64, 250), sender.clone());
                     let window = component.root_widget();
                     window.set_transient_for(app_window.upgrade().as_ref());
                     window.set_visible(true);
@@ -916,19 +897,6 @@ impl MicroModel for SlaveModel {
                     );
                 }
             },
-            SlaveMsg::DestroySlave => {
-                if let Some(polling) = self.get_polling() {
-                    if *polling {
-                        send!(self.video.sender(), SlaveVideoMsg::StopPipeline);
-                    }
-                }
-                if let Some(connected) = self.get_connected() {
-                    if *connected {
-                        send!(sender, SlaveMsg::ToggleConnect);
-                    }
-                }
-                send!(parent_sender, AppMsg::DestroySlave(self as *const Self));
-            }
             SlaveMsg::ErrorMessage(msg) => {
                 error_message("错误", &msg, app_window.upgrade().as_ref());
             }
@@ -955,7 +923,7 @@ impl MicroModel for SlaveModel {
             SlaveMsg::ToggleRecord => {
                 let video = &self.video;
                 if video.model().get_record_handle().is_none() {
-                    let mut pathbuf = self.preferences.borrow().get_video_save_path().clone();
+                    let mut pathbuf = crate::preferences::get_video_path();
                     pathbuf.push(format!(
                         "{}.mkv",
                         DateTime::now_local()
@@ -989,8 +957,7 @@ impl MicroModel for SlaveModel {
                 self.set_recording(Some(recording));
             }
             SlaveMsg::TakeScreenshot => {
-                let mut pathbuf = self.preferences.borrow().get_image_save_path().clone();
-                let format = self.preferences.borrow().get_image_save_format().clone();
+                let mut pathbuf = crate::preferences::get_image_path();
                 pathbuf.push(format!(
                     "{}.{}",
                     DateTime::now_local()
@@ -998,7 +965,7 @@ impl MicroModel for SlaveModel {
                         .format_iso8601()
                         .unwrap()
                         .replace(":", "-"),
-                    format.extension()
+                    "jpg"
                 ));
                 send!(self.video.sender(), SlaveVideoMsg::SaveScreenshot(pathbuf));
             }

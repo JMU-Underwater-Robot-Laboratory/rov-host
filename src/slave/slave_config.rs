@@ -18,11 +18,11 @@
 
 use std::{fmt::Debug, str::FromStr};
 
-use adw::{prelude::*, ActionRow, ComboRow, ExpanderRow, PreferencesGroup};
+use adw::{prelude::*, ActionRow, ComboRow, PreferencesGroup};
 use glib::Sender;
 use gtk::{
-    Align, Box as GtkBox, Entry, Inhibit, Label, Orientation, ScrolledWindow, Separator,
-    SpinButton, StringList, Switch, Viewport,
+    Align, Box as GtkBox, Entry, Inhibit, Orientation, ScrolledWindow, Separator, StringList,
+    Switch, Viewport,
 };
 use relm4::{send, MicroModel, MicroWidgets, WidgetPlus};
 use relm4_macros::micro_widget;
@@ -32,13 +32,12 @@ use strum::IntoEnumIterator;
 use url::Url;
 
 use super::{
-    video::{VideoAlgorithm, VideoEncoder},
+    video::VideoAlgorithm,
     SlaveMsg,
 };
-use crate::{
-    preferences::PreferencesModel,
-    slave::video::{ColorspaceConversion, VideoCodec, VideoCodecProvider, VideoDecoder},
-};
+use crate::
+    preferences::PreferencesModel
+;
 
 #[tracker::track]
 #[derive(Debug, Derivative, PartialEq, Clone)]
@@ -55,22 +54,6 @@ pub struct SlaveConfigModel {
     pub video_algorithms: Vec<VideoAlgorithm>,
     #[derivative(Default(value = "PreferencesModel::default().default_keep_video_display_ratio"))]
     pub keep_video_display_ratio: bool,
-    #[derivative(Default(value = "PreferencesModel::default().default_video_decoder"))]
-    pub video_decoder: VideoDecoder,
-    #[derivative(Default(value = "PreferencesModel::default().default_colorspace_conversion"))]
-    pub colorspace_conversion: ColorspaceConversion,
-    #[derivative(Default(value = "false"))]
-    pub swap_xy: bool,
-    #[derivative(Default(value = "PreferencesModel::default().default_use_decodebin"))]
-    pub use_decodebin: bool,
-    pub video_encoder: VideoEncoder,
-    pub reencode_recording_video: bool,
-    #[derivative(Default(
-        value = "PreferencesModel::default().default_appsink_queue_leaky_enabled"
-    ))]
-    pub appsink_queue_leaky_enabled: bool,
-    #[derivative(Default(value = "PreferencesModel::default().default_video_latency"))]
-    pub video_latency: u32,
 }
 
 impl SlaveConfigModel {
@@ -78,16 +61,7 @@ impl SlaveConfigModel {
         Self {
             slave_url: preferences.get_default_slave_url().clone(),
             video_url: preferences.get_default_video_url().clone(),
-            colorspace_conversion: preferences.get_default_colorspace_conversion().clone(),
-            video_decoder: preferences.get_default_video_decoder().clone(),
             keep_video_display_ratio: preferences.get_default_keep_video_display_ratio().clone(),
-            use_decodebin: preferences.get_default_use_decodebin().clone(),
-            video_encoder: preferences.get_default_video_encoder().clone(),
-            reencode_recording_video: preferences.get_default_reencode_recording_video().clone(),
-            appsink_queue_leaky_enabled: preferences
-                .get_default_appsink_queue_leaky_enabled()
-                .clone(),
-            video_latency: preferences.get_default_video_latency().clone(),
             ..Default::default()
         }
     }
@@ -116,37 +90,8 @@ impl MicroModel for SlaveConfigModel {
                     self.get_mut_video_algorithms().push(algorithm);
                 }
             }
-            SlaveConfigMsg::SetVideoDecoder(decoder) => self.set_video_decoder(decoder),
-            SlaveConfigMsg::SetColorspaceConversion(conversion) => {
-                self.set_colorspace_conversion(conversion)
-            }
             SlaveConfigMsg::SetVideoUrl(url) => self.video_url = url,
             SlaveConfigMsg::SetSlaveUrl(url) => self.slave_url = url,
-            SlaveConfigMsg::SetVideoDecoderCodec(codec) => self.get_mut_video_decoder().0 = codec,
-            SlaveConfigMsg::SetVideoDecoderCodecProvider(provider) => {
-                self.get_mut_video_decoder().1 = provider
-            }
-            SlaveConfigMsg::SetSwapXY(swap) => self.set_swap_xy(swap),
-            SlaveConfigMsg::SetUsePlaybin(use_decodebin) => {
-                if use_decodebin {
-                    self.set_reencode_recording_video(true);
-                }
-                self.set_use_decodebin(use_decodebin);
-            }
-            SlaveConfigMsg::SetVideoEncoderCodec(codec) => self.get_mut_video_encoder().0 = codec,
-            SlaveConfigMsg::SetVideoEncoderCodecProvider(provider) => {
-                self.get_mut_video_encoder().1 = provider
-            }
-            SlaveConfigMsg::SetReencodeRecordingVideo(reencode) => {
-                if !reencode {
-                    self.set_use_decodebin(false);
-                }
-                self.set_reencode_recording_video(reencode)
-            }
-            SlaveConfigMsg::SetAppSinkQueueLeakyEnabled(leaky) => {
-                self.set_appsink_queue_leaky_enabled(leaky)
-            }
-            SlaveConfigMsg::SetVideoLatency(latency) => self.set_video_latency(latency),
         }
         send!(parent_sender, SlaveMsg::ConfigUpdated);
     }
@@ -165,17 +110,6 @@ pub enum SlaveConfigMsg {
     SetPolling(Option<bool>),
     SetConnected(Option<bool>),
     SetVideoAlgorithm(Option<VideoAlgorithm>),
-    SetVideoDecoder(VideoDecoder),
-    SetColorspaceConversion(ColorspaceConversion),
-    SetVideoDecoderCodec(VideoCodec),
-    SetVideoDecoderCodecProvider(VideoCodecProvider),
-    SetSwapXY(bool),
-    SetUsePlaybin(bool),
-    SetVideoEncoderCodec(VideoCodec),
-    SetVideoEncoderCodecProvider(VideoCodecProvider),
-    SetReencodeRecordingVideo(bool),
-    SetAppSinkQueueLeakyEnabled(bool),
-    SetVideoLatency(u32),
 }
 
 #[micro_widget(pub)]
@@ -269,55 +203,6 @@ impl MicroWidgets<SlaveConfigModel> for SlaveConfigWidgets {
                                         } else {
                                             entry.add_css_class("error");
                                         }
-                                    }
-                                },
-                            },
-                            add = &ExpanderRow {
-                                set_title: "手动配置管道",
-                                set_show_enable_switch: true,
-                                set_expanded: !*model.get_use_decodebin(),
-                                set_enable_expansion: track!(model.changed(SlaveConfigModel::use_decodebin()), !*model.get_use_decodebin()),
-                                connect_enable_expansion_notify(sender) => move |expander| {
-                                    send!(sender, SlaveConfigMsg::SetUsePlaybin(!expander.enables_expansion()));
-                                },
-                                add_row = &ActionRow {
-                                    set_title: "接收缓冲区延迟",
-                                    set_subtitle: "可以增加接收缓冲区延迟，牺牲视频的实时性来换取流畅度的提升",
-                                    add_suffix = &SpinButton::with_range(0.0, 60000.0, 50.0) {
-                                        set_value: track!(model.changed(SlaveConfigModel::video_latency()), model.video_latency as f64),
-                                        set_digits: 0,
-                                        set_valign: Align::Center,
-                                        set_can_focus: false,
-                                        connect_value_changed(sender) => move |button| {
-                                            send!(sender, SlaveConfigMsg::SetVideoLatency(button.value() as u32));
-                                        }
-                                    },
-                                    add_suffix = &Label {
-                                        set_label: "毫秒",
-                                    },
-                                },
-                            },
-                            add = &ExpanderRow {
-                                set_title: "录制时重新编码",
-                                set_show_enable_switch: true,
-                                set_expanded: *model.get_reencode_recording_video(),
-                                set_enable_expansion: track!(model.changed(SlaveConfigModel::reencode_recording_video()), *model.get_reencode_recording_video()),
-                                connect_enable_expansion_notify(sender) => move |expander| {
-                                    send!(sender, SlaveConfigMsg::SetReencodeRecordingVideo(expander.enables_expansion()));
-                                },
-                                add_row = &ComboRow {
-                                    set_title: "编码器",
-                                    set_subtitle: "视频录制时使用的编码器",
-                                    set_model: Some(&{
-                                        let model = StringList::new(&[]);
-                                        for value in VideoCodec::iter() {
-                                            model.append(&value.to_string());
-                                        }
-                                        model
-                                    }),
-                                    set_selected: track!(model.changed(SlaveConfigModel::video_encoder()), VideoCodec::iter().position(|x| x == model.video_encoder.0).unwrap() as u32),
-                                    connect_selected_notify(sender) => move |row| {
-                                        send!(sender, SlaveConfigMsg::SetVideoEncoderCodec(VideoCodec::iter().nth(row.selected() as usize).unwrap()))
                                     }
                                 },
                             },
